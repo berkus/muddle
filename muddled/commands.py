@@ -5694,7 +5694,7 @@ class Changed(PackageCommand):
 @command('commit', CAT_CHECKOUT)
 class Commit(CheckoutCommand):
     """
-    :Syntax: muddle commit [ <checkout> ... ]
+    :Syntax: muddle commit [<switches>] [ <checkout> ... ]
 
     Commit the specified checkouts to their local repositories.
 
@@ -5706,18 +5706,93 @@ class Commit(CheckoutCommand):
     If no checkouts are named, what we do depends on where we are in the
     build tree. See "muddle help labels".
 
+    By default, this will prompt the user to enter a commit message for each
+    checkout to be committed - see 'Switches' below for how to specify a single
+    commit message.
+
     For a centralised VCS (e.g., Subversion) where the repository is remote,
-    this will not do anything. See the update command.
+    this command will not do anything. See "muddle push".
+
+    Switches
+    --------
+    If '-s' or '-stop' is given, then we'll stop at the first problem,
+    otherwise an attempt will be made to process all the checkouts, and any
+    problems will be re-reported at the end.
+
+    If '-m <message>' is given, then <message> will be used as the commit
+    message for all the commits.
+
+    If '-F <file>' is given, then the contents of the <file> will be used as
+    the commit message for all the commits.
+
+    If '-e' or '-edit' is given, then the text editor indicated by $EDITOR will
+    be started, and used to edit a temporary file, whose contents will be used
+    as the commit message for all the commits. Then, if any of the commits
+    fail, the user can re-use that same temporary file with the '-F' switch
+    when the problems have been fixed.
+
+    Note that if the user doesn't put any text into the temporary file, or if
+    they abort the editing session, then the "muddle commit" will be abandoned.
+    Also, if $EDITOR is not set, then this switch will default to using 'vi',
+    which is quite likely not what you want.
     """
 
     # XXX Is this correct?
     required_tag = LabelTag.ChangesCommitted
 
+    stop_on_problem = False
+    commit_message_text = None
+    commit_message_file = None
+    use_editor = False
+
+    def remove_switches(self, args, allowed_more=True):
+        """Find any switches, remember them, return the remaining arguments.
+
+        Switches are assumed to all come before any labels. We stop with
+        an exception if we encounter something starting with '-' that is not a
+        recognised switch.
+
+        'allowed_more' is ignored.
+        """
+        while args and args[0][0] == '-':
+            word = args.pop(0)
+            try:
+                if word in ('-s', '-stop'):
+                    self.stop_on_problem = True
+                elif word == '-m':
+                    self.commit_message_text = args.pop(0) + '\n'
+                elif word == '-F':
+                    self.commit_message_file = args.pop(0)
+                elif word in ('-e', '-edit'):
+                    self.use_editor = True
+                else:
+                    raise GiveUp('Unexpected switch "%s"'%word)
+            except IndexError:
+                raise GiveUp('Switch %s needs an argument'%word)
+        return args
+
     def build_these_labels(self, builder, labels):
-        # Forcibly retract all the updated tags.
+
+        problems = []
+
         for co in labels:
-            builder.kill_label(co)
-            builder.build_label(co)
+            try:
+                # Forcibly retract all the updated tags.
+                builder.kill_label(co)
+                builder.build_label(co)
+            except GiveUp as e:
+                if self.stop_on_problem:
+                    raise
+                else:
+                    print e
+                    problems.append(e)
+
+        if problems:
+            print '\nThe following problems occurred:\n'
+            for e in problems:
+                print str(e).rstrip()
+                print
+            raise GiveUp()
 
 @command('push', CAT_CHECKOUT)
 class Push(CheckoutCommand):

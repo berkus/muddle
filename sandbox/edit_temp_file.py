@@ -11,7 +11,7 @@ This is some text already in the file
 
 def main():
 
-    editor = os.environ.get('EDITOR', 'vim')
+    editor = os.environ.get('EDITOR', 'vi')
 
     fd, filename = tempfile.mkstemp(suffix='.muddle.txt')
     with os.fdopen(fd, 'w') as f:
