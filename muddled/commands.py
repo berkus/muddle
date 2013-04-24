@@ -5743,6 +5743,7 @@ class Commit(CheckoutCommand):
     stop_on_problem = False
     commit_message_text = None
     commit_message_file = None
+    use_editor = False
 
     def remove_switches(self, args, allowed_more=True):
         """Find any switches, remember them, return the remaining arguments.
@@ -5753,7 +5754,6 @@ class Commit(CheckoutCommand):
 
         'allowed_more' is ignored.
         """
-        use_editor = False
 
         while args and args[0][0] == '-':
             word = args.pop(0)
@@ -5765,7 +5765,7 @@ class Commit(CheckoutCommand):
                 elif word == '-F':
                     self.commit_message_file = args.pop(0)
                 elif word in ('-e', '-edit'):
-                    use_editor = True
+                    self.use_editor = True
                 else:
                     raise GiveUp('Unexpected switch "%s"'%word)
             except IndexError:
@@ -5773,12 +5773,20 @@ class Commit(CheckoutCommand):
 
         if self.commit_message_text and self.commit_message_file:
             raise GiveUp('Cannot do both -m and -F')
-        if self.commit_message_text and use_editor:
+        if self.commit_message_text and self.use_editor:
             raise GiveUp('Cannot do both -m and -e')
-        if self.commit_message_file and use_editor:
+        if self.commit_message_file and self.use_editor:
             raise GiveUp('Cannot do both -F and -e')
 
-        if use_editor:
+        return args
+
+    def maybe_get_commit_message(self):
+        """Set self.commit_message_text if necessary.
+
+        And maybe also self.commit_message_file.
+        """
+
+        if self.use_editor:
             self.commit_message_file = self.edit_file()
 
         if self.commit_message_file:
@@ -5802,8 +5810,6 @@ class Commit(CheckoutCommand):
             print self.commit_message_text,         # we assume a trailing \n
             print '=========================================='
 
-        return args
-
     def edit_file(self):
         """Edit a temporary file and return its name and content.
 
@@ -5824,6 +5830,12 @@ class Commit(CheckoutCommand):
     def build_these_labels(self, builder, labels):
 
         problems = []
+
+        if labels:
+            # Do this here so we don't spuriously start up text editors
+            # (or whatever) when the poor user has invoked us with nothing
+            # to do.
+            self.maybe_get_commit_message()
 
         for co in labels:
             try:
