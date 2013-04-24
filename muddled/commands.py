@@ -5743,7 +5743,6 @@ class Commit(CheckoutCommand):
     stop_on_problem = False
     commit_message_text = None
     commit_message_file = None
-    use_editor = False
 
     def remove_switches(self, args, allowed_more=True):
         """Find any switches, remember them, return the remaining arguments.
@@ -5754,6 +5753,8 @@ class Commit(CheckoutCommand):
 
         'allowed_more' is ignored.
         """
+        use_editor = False
+
         while args and args[0][0] == '-':
             word = args.pop(0)
             try:
@@ -5764,12 +5765,61 @@ class Commit(CheckoutCommand):
                 elif word == '-F':
                     self.commit_message_file = args.pop(0)
                 elif word in ('-e', '-edit'):
-                    self.use_editor = True
+                    use_editor = True
                 else:
                     raise GiveUp('Unexpected switch "%s"'%word)
             except IndexError:
                 raise GiveUp('Switch %s needs an argument'%word)
+
+        if self.commit_message_text and self.commit_message_file:
+            raise GiveUp('Cannot do both -m and -F')
+        if self.commit_message_text and use_editor:
+            raise GiveUp('Cannot do both -m and -e')
+        if self.commit_message_file and use_editor:
+            raise GiveUp('Cannot do both -F and -e')
+
+        if use_editor:
+            self.commit_message_file = self.edit_file()
+
+        if self.commit_message_file:
+            try:
+                with open(self.commit_message_file) as fd:
+                    self.commit_message_text = fd.read()
+                print 'Message text from %s:'%self.commit_message_file
+            except IOError as e:
+                if e.errno == errno.ENOENT:
+                    raise GiveUp('No such file: %s'%filename)
+                else:
+                    raise GiveUp('Cannot open file %s\n%s\n'%(filename, e))
+
+            # If they want an empty commit message, they can still use -m ""
+            # (perverse as that may be)
+            if self.commit_message_text == '':
+                raise GiveUp('No commit message, file was empty')
+
+        if self.commit_message_text:
+            print '====================== Commit message text'
+            print self.commit_message_text,         # we assume a trailing \n
+            print '=========================================='
+
         return args
+
+    def edit_file(self):
+        """Edit a temporary file and return its name and content.
+
+        Returns the filename. Yes, theoretically this is a security hole
+        because someone else could rewrite the file after we've returned
+        its name, but that's hardly the worst of muddle's race conditions.
+        """
+        editor = os.environ.get('EDITOR', 'vi')
+
+        fd, filename = tempfile.mkstemp(suffix='.muddle.txt')
+        print 'Editing file %s with %s'%(filename, editor)
+        rv = subprocess.call((editor, filename), close_fds=True)
+        if rv:
+            raise GiveUp('Editing failed with return code %d'%rv)
+
+        return filename
 
     def build_these_labels(self, builder, labels):
 
