@@ -137,12 +137,17 @@ class Subversion(VersionControlSystem):
         # Did we update anything?
         return starting_revno != ending_revno
 
-    def commit(self, repo, options, verbose=True):
+    def commit(self, repo, options,
+               commit_message_file=None, commit_message_text=None, verbose=True):
         """
         Will be called in the actual checkout's directory.
 
         This command does nothing, because Subversion does not have a local
         repository. Use 'muddle push' instead.
+
+        (Although there *is* an argument to say that "muddle commit" and
+        "muddle push" should be identical for subversion. It depends if one
+        thinks that a "commit" should not need to traverse the network...)
         """
         pass
 

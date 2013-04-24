@@ -92,7 +92,8 @@ class File(VersionControlSystem):
         # See the comment in 'pull()' above
         return True
 
-    def commit(self, repo, options, verbose=True):
+    def commit(self, repo, options,
+               commit_message_file=None, commit_message_text=None, verbose=True):
         """
         Will be called in the actual checkout's directory.
         """

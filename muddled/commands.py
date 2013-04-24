@@ -5836,6 +5836,13 @@ class Commit(CheckoutCommand):
             # (or whatever) when the poor user has invoked us with nothing
             # to do.
             self.maybe_get_commit_message()
+            # We need to get the commit message (if any) down to the commit
+            # method of our particular VCS. Unfortunately, build_label doesn't
+            # have a mechanism to pass arbitrary arguments down to an action,
+            # nor does an action have any way to use such. So we're going to
+            # have to do something out-of-band and ad-hoc. Ick.
+            builder.commit_message_file = self.commit_message_file
+            builder.commit_message_text = self.commit_message_text
 
         for co in labels:
             try:
@@ -5854,6 +5861,8 @@ class Commit(CheckoutCommand):
             for e in problems:
                 print str(e).rstrip()
                 print
+            if self.commit_message_file:
+                print 'The commit message is in %s'%self.commit_message_file
             raise GiveUp()
 
 @command('push', CAT_CHECKOUT)

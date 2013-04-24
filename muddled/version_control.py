@@ -82,7 +82,7 @@ class VersionControlSystem(object):
         """
         return False
 
-    def commit(self, repo, options, verbose=True):
+    def commit(self, repo, options, commit_file=None, commit_message=None, verbose=True):
         """
         Will be called in the actual checkout's directory.
 
@@ -462,9 +462,19 @@ class VersionControlHandler(object):
         """
         repo = builder.db.get_checkout_repo(co_label)
         options = builder.db.get_checkout_vcs_options(co_label)
+
+        # If we're given an explicit commit message, it comes down to us
+        # via the builder (icky, but there's no other obvious way to get
+        # such information from the Commit command down to us)
+        commit_message_file = builder.commit_message_file
+        commit_message_text = builder.commit_message_text
+
         with Directory(builder.db.get_checkout_path(co_label)):
             try:
-                self.vcs.commit(repo, options, verbose)
+                self.vcs.commit(repo, options,
+                                commit_message_file=commit_message_file,
+                                commit_message_text=commit_message_text,
+                                verbose=verbose)
             except MuddleBug as err:
                 raise MuddleBug('Error commiting %s in %s:\n%s'%(co_label,
                                 builder.db.get_checkout_location(co_label), err))

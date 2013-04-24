@@ -166,6 +166,14 @@ class Builder(object):
         # (explicitly) specifies its own branch or revision.
         self._follow_build_desc_branch = False
 
+        # Users doing "muddle commit" can specify a commit message to use
+        # for all the commits being done. There's no good way to get that
+        # down to the VCS (via build_label and an action), so we have an
+        # ad-hoc out-of-band solution using this commit_message value. Clearly
+        # this should normally be unset...
+        self.commit_messge_file = None
+        self.commit_messge_text = None
+
     @property
     def build_desc_repo(self):
         """The Repository for our build description.

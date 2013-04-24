@@ -260,13 +260,19 @@ class Bazaar(VersionControlSystem):
         # Did we update anything?
         return starting_revno != ending_revno
 
-    def commit(self, repo, options, verbose=True):
+    def commit(self, repo, options,
+               commit_message_file=None, commit_message_text=None, verbose=True):
         """
         Will be called in the actual checkout's directory.
         """
+        cmdlist = ['bzr', 'commit']
+        if commit_message_file:
+            cmdlist.extend(['-F', commit_message_file])
+        elif commit_message_text:
+            cmdlist.extend(['-m', commit_message_text])
         # Options: --strict means it will not commit if there are unknown
         # files in the working tree
-        utils.run_cmd("bzr commit", allowFailure=True,
+        utils.run_cmd(cmdlist, allowFailure=True,
                       env=self._derive_env(), verbose=verbose)
 
     def push(self, repo, options, upstream=None, verbose=True):

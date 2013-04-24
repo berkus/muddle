@@ -376,14 +376,20 @@ class Git(VersionControlSystem):
                                    upstream=None, verbose=verbose,
                                    merge=True)
 
-    def commit(self, repo, options, verbose=True):
+    def commit(self, repo, options,
+               commit_message_file=None, commit_message_text=None, verbose=True):
         """
         Will be called in the actual checkout's directory.
 
         Does 'git commit -a' - i.e., this implicitly does 'git add' for you.
         This is a contentious choice, and needs review.
         """
-        utils.run_cmd("git commit -a", verbose=verbose)
+        cmdlist = ['git', 'commit', '-a']
+        if commit_message_file:
+            cmdlist.extend(['-F', commit_message_file])
+        elif commit_message_text:
+            cmdlist.extend(['-m', commit_message_text])
+        utils.run_cmd_list(cmdlist, verbose=verbose)
 
     def push(self, repo, options, upstream=None, verbose=True):
         """
