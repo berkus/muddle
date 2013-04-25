@@ -975,7 +975,8 @@ def test_lifecycle(root_d):
                 # that this new 01.py is later than the previous version
                 os.remove('01.pyc')
 
-        muddle(['runin', '_all_checkouts', 'git commit -a -m "Create maintenance branch"'])
+        ##muddle(['runin', '_all_checkouts', 'git commit -a -m "Create maintenance branch"'])
+        muddle(['commit', '_all', '-m', 'Create maintenance branch'])
         muddle(['push', '_all'])
 
         # Find out what branches we are working with

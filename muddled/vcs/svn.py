@@ -142,14 +142,18 @@ class Subversion(VersionControlSystem):
         """
         Will be called in the actual checkout's directory.
 
-        This command does nothing, because Subversion does not have a local
-        repository. Use 'muddle push' instead.
-
-        (Although there *is* an argument to say that "muddle commit" and
-        "muddle push" should be identical for subversion. It depends if one
-        thinks that a "commit" should not need to traverse the network...)
+        This does a "svn commit", i.e., committing to the remote
+        repository (which is the only one subversion has), and is thus
+        identical (at this level) to doing a "push". Although note that
+        for subverison "muddle commit" will always do a "svn update" followed
+        by "svn commit", whereas "muddle pull" will just do the commit.
         """
-        pass
+        cmdlist = ['svn', 'commit']
+        if commit_message_file:
+            cmdlist.extend(['-F', commit_message_file])
+        elif commit_message_text:
+            cmdlist.extend(['-m', commit_message_text])
+        utils.run_cmd_list(cmdlist, verbose=verbose)
 
     def push(self, repo, options, upstream=None, verbose=True):
         """

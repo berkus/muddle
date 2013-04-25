@@ -37,11 +37,11 @@ should "follow" its branch (we'll see why further below). So we add the line::
 
 to the build description (normally in ``src/builds/01.py``).
 
-We now need to commit and push all of these changes. Unfortunately, we don't
-yet have a way of doing a "muddle commit" that specifies a commit message, so
-the best we can do (assuming everything is using git) is::
+We now need to commit and push all of these changes. This is one of the few
+times when it makes sense to use ``muddle commit`` on the whole build tree;
+for instance::
 
-  $ muddle runin _all_checkouts 'git commit -a -m "Create maintenance branch"'
+  $ muddle commit _all_checkouts -m "Create maintenance branch"
 
 and then::
 
@@ -208,18 +208,9 @@ This means we would:
       and treating that as an error - otherwise the nature of Python
       would allow this, with no effect.
 
-4. We then need to commit everything. We really need a::
+4. We then need to commit everything::
 
-     $ muddle commit _all -m <message>
-
-   but we don't have one yet, but we can do::
-
-     $ muddle runin _all_checkouts 'git commit -a -m "Create maintenance branch"'
-
-   if we are careful with the quoting. Of course, if any of our checkouts are
-   not using git, that's going to search up through the directories looking
-   for a ``.git`` directory, which can sometimes lead to surprising effects,
-   so be a little bit careful.
+     $ muddle commit _all_checkouts -m "Create maintenance branch"
 
 5. We can then do::
 
@@ -432,23 +423,22 @@ As to the other checkouts:
 * "co.bzr" is using Bazaar, and muddle does not support branching it, so it
   says that it does not support it.
 
-We can now commit - I'm only going to commit the two checkouts we've
-actually branched, not least because trying to do ``git commit`` in "co.bzr"
-will not generally end well::
+We can now commit those branched checkouts::
 
-  $ muddle runin co1 'git commit -a -m "Create maintenance branch"'
+  $ muddle commit co1 -m "Create maintenance branch"
+  > Building checkout:co1/changes_committed[T]
   ++ pushd to /home/tibs/sw/m3/tests/transient/example/src/co1
+  > git commit -a -m Create maintenance branch
   # On branch Widget-v1.0-maintenance
   nothing to commit (working directory clean)
-  $ muddle runin builds 'git commit -a -m "Create maintenance branch"'
+  $ muddle commit builds -m "Create maintenance branch"
+  > Building checkout:builds/changes_committed[T]
   ++ pushd to /home/tibs/sw/m3/tests/transient/example/src/builds
+  > git commit -a -m Create maintenance branch
   [Widget-v1.0-maintenance 726189c] Create maintenance branch
    1 file changed, 34 insertions(+), 2 deletions(-)
 
-(obviously I could have used ``muddle commit`` directly here, which would have
-opened an editor for me to type the commit comments).
-
-And we can now push::
+And we can then push::
 
   $ muddle push _all
   > Building checkout:builds/changes_pushed[T]

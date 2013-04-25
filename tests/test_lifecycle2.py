@@ -474,7 +474,8 @@ def main(args):
                          "(subdomain2)co_repo1.1 v1-maintenance <none> v1-maintenance"],
                         fold_whitespace=True)
 
-            muddle(['runin', '_all_checkouts', 'git commit -a -m "Create maintenance branch"'])
+            ##muddle(['runin', '_all_checkouts', 'git commit -a -m "Create maintenance branch"'])
+            muddle(['commit', '_all', '-m', 'Create maintenance branch'])
             muddle(['push', '_all'])
 
         # The push causes "(subdomain2)co_repo1.1" to push to our "repo1.1",

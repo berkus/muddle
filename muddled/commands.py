@@ -5711,10 +5711,13 @@ class Commit(CheckoutCommand):
     commit message.
 
     For a centralised VCS (e.g., Subversion) where the repository is remote,
-    this command will not do anything. See "muddle push".
+    this command may be very similar to "muddle push" (although "commit" may
+    enforce a "pull" and then "commit", which "push" does not do).
 
     Switches
     --------
+    The following switches may occur at any position after the "commit".
+
     If '-s' or '-stop' is given, then we'll stop at the first problem,
     otherwise an attempt will be made to process all the checkouts, and any
     problems will be re-reported at the end.
@@ -5735,6 +5738,25 @@ class Commit(CheckoutCommand):
     they abort the editing session, then the "muddle commit" will be abandoned.
     Also, if $EDITOR is not set, then this switch will default to using 'vi',
     which is quite likely not what you want.
+
+    TODO: If we are using this for lifecycle work (after "muddle branch-tree")
+    then we will end up trying to commit things with no change, except the
+    creation of a branch. It seems likely that we want "muddle commit" to
+    translate to:
+
+        * for git, we probably want --allow-empty, to allow "empty" commits
+        * for bzr, the equivalent sounds like --unchanged
+        * I don't know what svn does with an empty/unchanged commit, and there
+          doesn't seem to be an equivalent switch.
+
+    For an empty commit there are two choices: (1) enforce the commit, which
+    has the advantage of putting the commit message into all the checkouts,
+    or (2) ignore the commit, which is in some sense more expected, and may
+    be the only thing we can do for svn (i.e., check if there's a change and
+    do nothing if there isn't). Since "muddle commit" only *really* becomes
+    useful over many checkouts for things like "muddle branch-tree", where it
+    is invaluable, I'd want to go for (1) if a commit message is specified,
+    and (maybe) go for (2) if it is not...
     """
 
     # XXX Is this correct?
@@ -5748,14 +5770,14 @@ class Commit(CheckoutCommand):
     def remove_switches(self, args, allowed_more=True):
         """Find any switches, remember them, return the remaining arguments.
 
-        Switches are assumed to all come before any labels. We stop with
-        an exception if we encounter something starting with '-' that is not a
-        recognised switch.
+        Switches are allowed anywhere in any order. We stop with an exception
+        if we encounter something starting with '-' that is not a recognised
+        switch.
 
         'allowed_more' is ignored.
         """
-
-        while args and args[0][0] == '-':
+        final_args = []
+        while args:
             word = args.pop(0)
             try:
                 if word in ('-s', '-stop'):
@@ -5766,8 +5788,10 @@ class Commit(CheckoutCommand):
                     self.commit_message_file = args.pop(0)
                 elif word in ('-e', '-edit'):
                     self.use_editor = True
-                else:
+                elif word[0] == '-':
                     raise GiveUp('Unexpected switch "%s"'%word)
+                else:
+                    final_args.append(word)
             except IndexError:
                 raise GiveUp('Switch %s needs an argument'%word)
 
@@ -5778,7 +5802,7 @@ class Commit(CheckoutCommand):
         if self.commit_message_file and self.use_editor:
             raise GiveUp('Cannot do both -F and -e')
 
-        return args
+        return final_args
 
     def maybe_get_commit_message(self):
         """Set self.commit_message_text if necessary.
