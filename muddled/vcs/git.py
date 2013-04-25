@@ -382,13 +382,16 @@ class Git(VersionControlSystem):
         Will be called in the actual checkout's directory.
 
         Does 'git commit -a' - i.e., this implicitly does 'git add' for you.
-        This is a contentious choice, and needs review.
+
+        If either a commit message or a commit message file is given, we also
+        specify --allow-empty, so that "empty" commits (i.e., nothing has
+        changed) will work, putting the commit message into history.
         """
         cmdlist = ['git', 'commit', '-a']
         if commit_message_file:
-            cmdlist.extend(['-F', commit_message_file])
+            cmdlist.extend(['--allow-empty', '-F', commit_message_file])
         elif commit_message_text:
-            cmdlist.extend(['-m', commit_message_text])
+            cmdlist.extend(['--allow-empty', '-m', commit_message_text])
         utils.run_cmd_list(cmdlist, verbose=verbose)
 
     def push(self, repo, options, upstream=None, verbose=True):

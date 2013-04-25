@@ -5756,7 +5756,12 @@ class Commit(CheckoutCommand):
     do nothing if there isn't). Since "muddle commit" only *really* becomes
     useful over many checkouts for things like "muddle branch-tree", where it
     is invaluable, I'd want to go for (1) if a commit message is specified,
-    and (maybe) go for (2) if it is not...
+    and if it is not, either keep the current situation (it fails), or else try
+    option (2) - although that's more work for little return, I think.
+
+    For the moment, I've gone (see vcs/git.py and vcs/bzr.py) with option (1)
+    if there's a message text/file, and the old behaviour (fail) if there is
+    not.
     """
 
     # XXX Is this correct?

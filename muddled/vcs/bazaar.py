@@ -264,12 +264,16 @@ class Bazaar(VersionControlSystem):
                commit_message_file=None, commit_message_text=None, verbose=True):
         """
         Will be called in the actual checkout's directory.
+
+        If either a commit message or a commit message file is given, we also
+        specify --unchanged, so that "empty" commits (i.e., nothing has
+        changed) will work, putting the commit message into history.
         """
         cmdlist = ['bzr', 'commit']
         if commit_message_file:
-            cmdlist.extend(['-F', commit_message_file])
+            cmdlist.extend(['--unchanged', '-F', commit_message_file])
         elif commit_message_text:
-            cmdlist.extend(['-m', commit_message_text])
+            cmdlist.extend(['--unchanged', '-m', commit_message_text])
         # Options: --strict means it will not commit if there are unknown
         # files in the working tree
         utils.run_cmd(cmdlist, allowFailure=True,
