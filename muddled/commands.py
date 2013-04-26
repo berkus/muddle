@@ -5762,6 +5762,21 @@ class Commit(CheckoutCommand):
     For the moment, I've gone (see vcs/git.py and vcs/bzr.py) with option (1)
     if there's a message text/file, and the old behaviour (fail) if there is
     not.
+
+    BUT if the reason we're doing this is for "muddle branch-dist", and we're
+    just trying to propagate the (newly created) branch to the far repositories,
+    then git for one doesn't *need* a commit before it does its push [1].
+    Specifically, our "muddle push" for git does "git push <upstream> <branch>".
+    So if we don't need the commit for a "bare" branch, that surely means that
+    we don't need the "commit should be able to commit unchanged checkouts" -
+    instead, it would be better if that silently succeeded in doing nothing
+    (or perhaps reports it does nothing in some "but this is not an error"
+    manner). It's perhaps acceptable to retain the current "having nothing to
+    commit is an error" situation, if the reporting at the end makes it plain
+    this is the case (which it doesn't particularly at the moment).
+
+    [1] well, except presumably for the build description, which will have
+        gained a "follow me" statement.
     """
 
     # XXX Is this correct?
