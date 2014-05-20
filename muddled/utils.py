@@ -2,11 +2,15 @@
 Muddle utilities.
 """
 
+import errno
 import hashlib
 import imp
 import os
+import pipes
 import pwd
 import re
+import select
+import shlex
 import shutil
 import socket
 import stat
@@ -16,10 +20,10 @@ import tempfile
 import textwrap
 import time
 import traceback
-import errno
 import xml.dom
 import xml.dom.minidom
 from collections import MutableMapping, Mapping, namedtuple
+from fnmatch import fnmatchcase
 from ConfigParser import RawConfigParser
 from StringIO import StringIO
 
@@ -563,6 +567,310 @@ def current_machine_name():
     """
     return socket.gethostname()
 
+# =============================================================================
+# Running commands (subprocess handling)
+# -----------------------------------------------------------------------------
+BUFSIZE=1024
+
+class ShellError(GiveUp):
+    def __init__(self, cmd, retcode, output=None):
+        self.cmd = cmd
+        self.retcode = retcode
+        if output is not None:
+            self.output = output.rstrip()   # Is this sensible to do here?
+        else:
+            self.output = output
+
+        msg = "Command %s failed with retcode %d"%(repr(cmd), retcode)
+        if output:
+            msg = '%s:\n%s'%(msg, indent(output.rstrip(), "  "))
+        super(GiveUp, self).__init__(msg)
+
+def _stringify_cmd(thing):
+    """Given a command, as either a string or sequence, return a string.
+
+    Uses pipes.quote() to quote each individual item in a sequence.
+    """
+    if isinstance(thing, basestring):
+        return thing
+    else:
+        parts = []
+        for item in thing:
+            if isinstance(item, basestring):
+                parts.append(pipes.quote(item))
+            else:
+                parts.append(pipes.quote(str(item)))
+        return ' '.join(parts)
+
+def _rationalise_cmd(thing):
+    """Given a command, as either a string or sequence, return a sequence.
+
+    If it is a sequence, convert any non-strings to strings using str()
+    """
+    if isinstance(thing, basestring):
+        thing = shlex.split(thing)
+    else:
+        new = []
+        for item in thing:
+            if isinstance(item, basestring):
+                new.append(item)
+            else:
+                new.append(str(item))
+        thing = new
+    return thing
+
+
+def shell(thing, env=None, show_command=True):
+    """Run the command 'thing' in the shell.
+
+    If 'thing' is a string (e.g., "ls -l"), then it will be used as it is
+    given.
+
+    If 'thing' is a sequence (e.g., ["ls", "-l"]), then each component will
+    be escaped with pipes.quote(), and the result concatenated (with spaces
+    between) to give the command line to run.
+
+    If 'env' is given, then it is the environment to use when running 'thing',
+    otherwise 'os.environ' is used.
+
+    If 'show_command' is true, then "> <thing>" will be printed out
+    before running the command.
+
+    The output of the command will always be printed out as it runs.
+
+    If the command returns a non-zero return code, then a ShellError will
+    be raised, containing the returncode, the command string and any output
+    that occurred.
+
+    Unlike the various 'runX' functions, this calls subprocess.Popen with
+    'shell=True'. This makes things like "cd" available in 'thing', and use of
+    shell specific things like value expansion. It also, morei mportantly for
+    muddle, allows commands like "git clone" to do their progress report
+    "rolling" output. However, the warnings in the Python subprocess
+    documentation should be heeded about not using unsafe command lines.
+
+    NB: If you *do* want to do "cd xxx; yyy", you're probably better doing::
+
+        with Directory("xxx"):
+            shell("yyy")
+    """
+    if not isinstance(thing, basestring):
+        thing = _stringify_cmd(thing)
+    if show_command:
+        sys.stdout.write('> %s\n'%thing)
+    if env is None: # so, for instance, an empty dictionary is allowed
+        env = os.environ
+    try:
+        subprocess.check_call(thing, shell=True)
+    except subprocess.CalledProcessError as e:
+        # Unfortunately, e.output will actually be None, since it is only
+        # populated for check_output.
+        raise ShellError(thing, e.returncode, e.output)
+
+def get_cmd_data(thing, env=None, show_command=False):
+    """Run the command 'thing', and return its output.
+
+    'thing' may be a string (e.g., "ls -l") or a sequence (e.g., ["ls", "-l"]).
+    Internally, a string will be converted into a sequence before it is used.
+    Any non-string items in a 'thing' sequence will be converted to strings
+    using 'str()' (e.g., if a Label instance is given).
+
+    If 'env' is given, then it is the environment to use when running 'thing',
+    otherwise 'os.environ' is used.
+
+    Note that the output of the command is not shown whilst the command is
+    running.
+
+    If the command returns a non-zero exit code, then we raise a ShellError.
+
+    (This is basically a muddle-flavoured wrapper around subprocess.check_output)
+    """
+    thing = _rationalise_cmd(thing)
+    if show_command:
+        sys.stdout.write('> %s\n'%_stringify_cmd(thing))
+    if env is None: # so, for instance, an empty dictionary is allowed
+        env = os.environ
+    try:
+        return subprocess.check_output(thing, env=env)
+    except subprocess.CalledProcessError as e:
+        raise ShellError(_stringify_cmd(thing), e.returncode, e.output)
+
+def run0(thing, env=None, show_command=True, show_output=True):
+    """Run the command 'thing', returning nothing.
+
+    (Run and return 0 values)
+
+    'thing' may be a string (e.g., "ls -l") or a sequence (e.g., ["ls", "-l"]).
+    Internally, a string will be converted into a sequence before it is used.
+
+    If 'env' is given, then it is the environment to use when running 'thing',
+    otherwise 'os.environ' is used.
+
+    If 'show_command' is true, then "> <thing>" will be printed out before
+    running the command.
+
+    If 'show_output' is true, then the output of the command (both stdout and
+    stderr) will be printed out as the command runs. Note that this is the
+    default.
+
+    If the command returns a non-zero return code, then a ShellError will
+    be raised, containing the returncode, the command string and any output
+    that occurred.
+    """
+    rc, output = run2(thing, env=env, show_command=show_command, show_output=show_output)
+    if rc != 0:
+        raise ShellError(cmd=_stringify_cmd(thing), retcode=rc, output=output)
+
+def run1(thing, env=None, show_command=True, show_output=False):
+    """Run the command 'thing', returning its output.
+
+    (Run and return 1 value)
+
+    'thing' may be a string (e.g., "ls -l") or a sequence (e.g., ["ls", "-l"]).
+    Internally, a string will be converted into a sequence before it is used.
+    Any non-string items in a 'thing' sequence will be converted to strings
+    using 'str()' (e.g., if a Label instance is given).
+
+    If 'env' is given, then it is the environment to use when running 'thing',
+    otherwise 'os.environ' is used.
+
+    If 'show_command' is true, then "> <thing>" will be printed out before
+    running the command.
+
+    If 'show_output' is true, then the output of the command (both stdout and
+    stderr) will be printed out as the command runs.
+
+    If the command returns a non-zero return code, then a ShellError will
+    be raised, containing the returncode, the command string and any output
+    that occurred.
+
+    Otherwise, the command output (stdout and stderr combined) is returned.
+    """
+    rc, output = run2(thing, env=env, show_command=show_command, show_output=show_output)
+    if rc == 0:
+        return output
+    else:
+        raise ShellError(cmd=_stringify_cmd(thing), retcode=rc, output=output)
+
+def run2(thing, env=None, show_command=True, show_output=False):
+    """Run the command 'thing', returning the return code and output.
+
+    (Run and return 2 values)
+
+    'thing' may be a string (e.g., "ls -l") or a sequence (e.g., ["ls", "-l"]).
+    Internally, a string will be converted into a sequence before it is used.
+    Any non-string items in a 'thing' sequence will be converted to strings
+    using 'str()' (e.g., if a Label instance is given).
+
+    If 'show_command' is true, then "> <thing>" will be printed out before
+    running the command.
+
+    If 'show_output' is true, then the output of the command (both stdout and
+    stderr) will be printed out as the command runs.
+
+    The output of the command (stdout and stderr) goes to the normal stdout
+    whilst the command is running.
+
+    The command return code and output are returned as a tuple:
+
+        (retcode, output)
+    """
+    thing = _rationalise_cmd(thing)
+    if show_command:
+        sys.stdout.write('> %s\n'%_stringify_cmd(thing))
+        sys.stdout.flush()
+    if env is None: # so, for instance, an empty dictionary is allowed
+        env = os.environ
+    text = []
+    proc = subprocess.Popen(thing, env=env, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+    for data in proc.stdout:
+        if show_output:
+            sys.stdout.write(data)
+            sys.stdout.flush()
+        text.append(data)
+    proc.wait()
+    sys.stdout.flush()
+    text = ''.join(text)
+    return proc.returncode, text
+
+def run3(thing, env=None, show_command=True, show_output=False):
+    """Run the command 'thing', returning the return code, stdout and stderr.
+
+    (Run and return 3 values)
+
+    'thing' may be a string (e.g., "ls -l") or a sequence (e.g., ["ls", "-l"]).
+    Internally, a string will be converted into a sequence before it is used.
+    Any non-string items in a 'thing' sequence will be converted to strings
+    using 'str()' (e.g., if a Label instance is given).
+
+    If 'env' is given, then it is the environment to use when running 'thing',
+    otherwise 'os.environ' is used.
+
+    If 'show_command' is true, then "> <thing>" will be printed out before
+    running the command.
+
+    If 'show_output' is true, then the output of the command (both stdout and
+    stderr) will be printed out as the command runs.
+
+    The output of the command is shown whilst the command is running; its
+    stdout goes to the normal stdout, and its stderr to stderr.
+
+    The command return code, stdout and stderr are returned as a tuple:
+
+        (retcode, stdout, stderr)
+    """
+    thing = _rationalise_cmd(thing)
+    if show_command:
+        sys.stdout.write('> %s\n'%_stringify_cmd(thing))
+    if env is None: # so, for instance, an empty dictionary is allowed
+        env = os.environ
+    all_stdout_text = []
+    all_stderr_text = []
+    proc = subprocess.Popen(thing, env=env, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+
+    # We use select here because poll is less portable (although at the moment
+    # we are only working on Linux, so perhaps I shouldn't care)
+    read_list = [proc.stdout, proc.stderr]
+    while read_list:
+        try:
+            rlist, wlist, xlist = select.select(read_list, [], [])
+        except select.error as e:
+            if e.args[0] == errno.EINTR:
+                continue
+            else:
+                raise GiveUp("Error selecting command output\n"
+                             "For: %s\n"
+                             "Error: %d %s %s"%(_stringify_cmd(thing),
+                                 e.args[0], errno.errorcode[e.args[0]], e.args[1]))
+        if proc.stdout in rlist:
+            # We don't use readline (which would be nicer) because
+            # we don't know whether the data we're being given *is*
+            # a line, and readline would wait for the EOL
+            stdout_text = proc.stdout.read(BUFSIZE)
+            if stdout_text == '':
+                read_list.remove(proc.stdout)
+            else:
+                if show_output:
+                    sys.stdout.write(stdout_text)
+                all_stdout_text.append(stdout_text)
+        if proc.stderr in rlist:
+            # Comment as above
+            stderr_text = proc.stderr.read(BUFSIZE)
+            if stderr_text == '':
+                read_list.remove(proc.stderr)
+            else:
+                if show_output:
+                    sys.stderr.write(stderr_text)
+                all_stderr_text.append(stderr_text)
+    # Make sure proc.returncode gets set
+    proc.wait()
+
+    all_stdout_text = ''.join(all_stdout_text)
+    all_stderr_text = ''.join(all_stderr_text)
+    return proc.returncode, all_stdout_text, all_stderr_text
+
+# =============================================================================
+
 def page_text(progname, text):
     """
     Try paging 'text' by piping it through 'progname'.
@@ -594,116 +902,6 @@ def page_text(progname, text):
                     # so look for another candidate
                     continue
     print text
-
-def run_cmd_for_output(cmd_array, env = None, useShell = False, fold_stderr=False, verbose = True):
-    """
-    Run a command and return a tuple (return value, stdour output, stderr output).
-    """
-    a_process = subprocess.Popen(cmd_array, stdout=subprocess.PIPE,
-                                 stderr=subprocess.STDOUT if fold_stderr
-                                                          else subprocess.PIPE,
-                                 shell = useShell)
-    (out, err) = a_process.communicate()
-    return (a_process.wait(), out, err)
-
-
-def run_cmd(cmd, env=None, allowFailure=False, isSystem=False, verbose=True):
-    """
-    Run a command via the shell, raising an exception on failure,
-
-    * env is the environment to use when running the command.  If this is None,
-      then ``os.environ`` is used.
-    * if allowFailure is true, then failure of the command will be ignored.
-    * otherwise, isSystem is used to decide what to do if the command fails.
-      If isSystem is true, then this is a command being run by the system and
-      failure should be reported by raising utils.MuddleBug. otherwise, it's being
-      run on behalf of the user and failure should be reported by raising
-      utils.GiveUp.
-    * if verbose is true, then print out the command before executing it
-
-    The command's stdout and stderr are redirected through Python's sys.stdout
-    and sys.stderr respectively.
-
-    Return the exit code of this command.
-    """
-    if env is None: # so, for instance, an empty dictionary is allowed
-        env = os.environ
-    if verbose:
-        print "> %s"%cmd
-    rv = subprocess.call(cmd, shell=True, env=env, stdout=sys.stdout, stderr=subprocess.STDOUT)
-    if allowFailure or rv == 0:
-        return rv
-    else:
-        if isSystem:
-            raise MuddleBug("Command '%s' execution failed - %d"%(cmd,rv))
-        else:
-            raise GiveUp("Command '%s' execution failed - %d"%(cmd,rv))
-
-def run_cmd_list(cmdlist, env=None, allowFailure=False, isSystem=False, verbose=True):
-    """
-    Run a command via the shell, raising an exception on failure,
-
-    * env is the environment to use when running the command.  If this is None,
-      then ``os.environ`` is used.
-    * if allowFailure is true, then failure of the command will be ignored.
-    * otherwise, isSystem is used to decide what to do if the command fails.
-      If isSystem is true, then this is a command being run by the system and
-      failure should be reported by raising utils.MuddleBug. otherwise, it's being
-      run on behalf of the user and failure should be reported by raising
-      utils.GiveUp.
-    * if verbose is true, then print out the command before executing it
-
-    The command's stdout and stderr are redirected through Python's sys.stdout
-    and sys.stderr respectively.
-
-    Return the exit code of this command.
-    """
-    if env is None: # so, for instance, an empty dictionary is allowed
-        env = os.environ
-    if verbose:
-        print "> %s"%(' '.join(cmdlist))    # a poor approximation without shell quoting
-    rv = subprocess.call(cmdlist, env=env, stdout=sys.stdout, stderr=subprocess.STDOUT)
-    if allowFailure or rv == 0:
-        return rv
-    else:
-        if isSystem:
-            raise MuddleBug("Command '%s' execution failed - %d"%(' '.join(cmdlist),rv))
-        else:
-            raise GiveUp("Command '%s' execution failed - %d"%(' '.join(cmdlist),rv))
-
-
-def get_cmd_data(cmd, env=None, isSystem=False, fold_stderr=True,
-                 verbose=False, fail_nonzero=True):
-    """
-    Run the given command, and return its (returncode, stdout, stderr).
-
-    If 'fold_stderr', then "fold" stderr into stdout, and return
-    (returncode, stdout_data, NONE).
-
-    If 'fail_nonzero' then if the return code is non-0, raise an explanatory
-    exception (MuddleBug is 'isSystem', otherwise GiveUp).
-
-    And yes, that means the default use-case returns a tuple of the form
-    (0, <string>, None), but otherwise it gets rather awkward handling all
-    the options.
-    """
-    if env is None:
-        env = os.environ
-    if verbose:
-        print "> %s"%cmd
-    p = subprocess.Popen(cmd, shell=True, env=env,
-                         stdout=subprocess.PIPE,
-                         stderr=subprocess.STDOUT if fold_stderr
-                                                  else subprocess.PIPE)
-    stdoutdata, stderrdata = p.communicate()
-    returncode = p.returncode
-    if fail_nonzero and returncode:
-        if isSystem:
-            raise MuddleBug("Command '%s' execution failed - %d"%(cmd,returncode))
-        else:
-            raise GiveUp("Command '%s' execution failed - %d"%(cmd,returncode))
-    return returncode, stdoutdata, stderrdata
-
 
 def indent(text, indent):
     """Return the text indented with the 'indent' string.
@@ -840,10 +1038,10 @@ def recursively_remove(a_dir):
     """
     Recursively demove a directory.
     """
-    if (os.path.exists(a_dir)):
+    if os.path.exists(a_dir):
         # Again, the most efficient way to do this is to tell UNIX to do it
         # for us.
-        run_cmd("rm -rf \"%s\""%(a_dir))
+        run0("rm -rf \"%s\""%(a_dir))
 
 
 def copy_file_metadata(from_path, to_path):
@@ -1749,5 +1947,258 @@ def normalise_dir(dir):
 # It should really be called normalise_path - allow me to use that without
 # yet having replaced all occurrences...
 normalise_path = normalise_dir
+
+def parse_etc_os_release():
+    """Parse /etc/os-release and return a dictionary
+
+    This is *not* a good parser by any means - it is the quickest and
+    simplest thing I could do.
+
+    Note that a line like::
+
+        FRED='Fred\'s name'
+
+    will give us::
+
+        key 'Fred' -> value r"Fred\'s name"
+
+    i.e., we do not treat backslashes in a string in any way at all. In
+    fact, we don't do anything with strings other than throw away paired
+    outer "'" or '"'.
+
+    Oh, also we don't check whether the names before the '=' signs are those
+    that are expected, although we do provide a default value for 'ID' if it
+    is not given (as the documentation for /etc/os-release' specified).
+
+    (Note that the standard library platform.py (in 2.7) looks at
+    /etc/lsb-release, instead of /etc/os-release, which gives different
+    results.)
+    """
+    d = {}
+    with open('/etc/os-release') as fd:
+        for line in fd:
+            line = line.strip()
+            if line.startswith('#'):
+                continue
+            words = line.split('=')
+            name, rest = words[0].strip(), '='.join(words[1:]).strip()
+            if rest[0] == "'" and rest[-1] == "'":
+                rest = rest[1:-1]
+            elif rest[0] == '"' and rest[-1] == '"':
+                rest = rest[1:-1]
+            d[name] = rest
+
+    if 'ID' not in d:
+        d['ID'] = 'linux'   # apparently
+
+    return d
+
+def get_os_version_name():
+    """Retrieve a string identifying this version of the operating system
+
+    Looks in /etc/os-release, which gives a different result than platform.py,
+    which looks in /etc/lsb-release.
+    """
+    d = parse_etc_os_release()
+    id = d['ID']
+    version_id = d['VERSION_ID']
+    return '%s %s'%(id, version_id)
+
+class Choice(object):
+    """A choice "sequence".
+
+    A choice sequence is:
+
+        * a string, the only choice. For instance::
+
+              choice = Choice("libxml-dev2")
+              assert choice.choose('any string at all') == 'libxml-dev2)
+
+        * a sequence of the form [ (pattern, value), ... ]; that is a sequence
+          of one or more '(pattern, value)' pairs, where each 'pattern' is an
+          fnmatch pattern (see below) and each 'value' is a string.
+
+          The patterns are compared to 'what_to_match' in turn, and if one
+          matches, the corresponding 'value' is returned. If none match, a
+          ValueError is raised.
+
+          For instance::
+
+              choice = Choice([ ('ubuntu-12.*', 'package-v12'),
+                                ('ubuntu-1?.*', 'package-v10') ])
+              try:
+                  match = choice.choose_to_match_os()
+              except ValueError:
+                  print 'No package matched OS %s'%get_os_version_name()
+
+        * a sequence of the form [ (pattern, value), ..., default ]; that is
+          a sequence of one or more pairs (as above), with a final "default"
+          value, which must be a string or None.
+
+          The patterns are compared to 'what_to_match' in turn, and if one
+          matches, the corresponding 'value' is returned. If none match, the
+          final default value is returned. None is allowed so the caller can
+          easily tell that no choice was actually made.
+
+              choice = Choice([ ('ubuntu-12.*', 'package-v12'),
+                                ('ubuntu-1?.*', 'package-v10'),
+                                'package-v09' ])
+              # 'match' will always have a "sensible" value
+              match = choice.choose_to_match_os()
+
+              choice = Choice([ ('ubuntu-12.*', 'package-v12'),
+                                ('ubuntu-1?.*', 'package-v10'),
+                                None ])
+              match = choice.choose_to_match_os()
+              if match is None:
+                  return            # We know there was no given value
+
+        * as a result of the previous, we also allow [default], although
+          [None] is of questionable utility.
+
+              choice = Choice(["libxml-dev2"])
+              assert choice.choose('any string at all') == 'libxml-dev2)
+
+              choice = Choice(["None"])
+              assert choice.choose('any string at all') is None
+
+          (although that latter is the only way of "forcing" a Choice that
+          will always return None, if you did need such a thing...)
+
+    Why not just use a list of pairs (possibly with a default string at the
+    end, essentially just what we pass to Choice)? Well, it turns out that
+    if you want to do something like::
+
+        pkgs.apt_get(["fromble1",
+                      Choice([ ('ubuntu-12.*', 'fromble'),
+                               ('ubuntu-11.*', 'alex'),
+                               None ]),
+                      "ribbit",
+                      Choice([ ('ubuntu-12.*', 'package-v12'),
+                               ('ubuntu-1?.*', 'package-v10'),
+                               'package-v7' ]),
+                      "libxml-dev2",
+                    ])
+
+    it is (a) really hard to type it right if it is just nested sequences, and
+    (b) terribly hard to give useful error messages when the user doesn't get
+    it right. There are already enough brackets of various sorts, and if we
+    don't have the "Choice" delimiters, it just gets harder to keep track.
+    """
+
+    def __init__(self, choices):
+        self.choices = choices
+        self.only_choice = None
+        self.got_default = False
+        self._validate()
+
+    def _validate(self):
+        """Check that our choices make sense.
+
+        Raises a GiveUp error with an explanation if they do not
+        """
+        if isinstance(self.choices, basestring):
+            # A string is no choice at all, which is OK
+            self.only_choice = self.choices
+            return
+
+        if self.choices is None:
+            raise GiveUp('A choice sequence may not be None')
+
+        if len(self.choices) == 0:
+            raise GiveUp('A choice sequence may not be zero length')
+
+        if len(self.choices) == 1 and isinstance(self.choices[0], basestring):
+            # A sequence with only a default string choice is OK
+            self.only_choice = self.choices[0]
+            return
+
+        for index, pair in enumerate(self.choices[:-1]):
+            if pair is None:
+                raise GiveUp('Only the last item in a choice sequence may be None\n'
+                             '(found %r at index %d)\n'
+                             'Choices were:  %s'%(pair, index, self.choices))
+            if isinstance(pair, basestring):
+                raise GiveUp('Only the last item in a choice sequence may be a string\n'
+                             '(%r at index %d is a string)\n'
+                             'Choices were:  %s'%(pair, index, self.choices))
+            if len(pair) != 2:
+                raise GiveUp('All but the last item in a choice sequence must be pairs\n'
+                             '(%r at index %d has length %d)\n'
+                             'Choices were:  %s'%(pair, index, len(pair), self.choices))
+
+        # And as for that last item
+        if isinstance(self.choices[-1], basestring) or self.choices[-1] is None:
+            self.got_default = True
+        else:
+            # If it is not a string, we need to check it as well
+            if len(self.choices[-1]) != 2:
+                raise GiveUp('The last item in a choice sequence must be a string or a pair\n'
+                             '(the last item %r has length %d)\n'
+                             'Choices were:  %s'%(self.choices[-1],
+                                 len(self.choices[-1]), self.choices))
+
+    def __str__(self):
+        if self.only_choice:
+            return 'Choice(%r)'%self.only_choice
+        else:
+            return 'Choice(%s)'%self.choices
+
+    def choose(self, what_to_match):
+        """Try to match 'what_to_match', and return the appropriate value.
+
+        Raises ValueError if there is no match.
+
+        Returns None if (and only if) that was given as a fall-back default
+        value.
+        """
+        if self.only_choice:
+            return self.only_choice
+
+        for pattern, value in self.choices[:-1]:
+            if fnmatchcase(what_to_match, pattern):
+                return value
+
+        if self.got_default:
+            return self.choices[-1]
+        else:
+            pattern, value = self.choices[-1]
+            if fnmatchcase(what_to_match, pattern):
+                return value
+
+        raise ValueError('Nothing matched')
+
+    def choose_to_match_os(self, version_name=None):
+        """A special case of 'decide' to match OS id/version
+
+        If 'version_name' is None, then it looks up the system 'id' (the "name"
+        of the OS, e.g., "ubuntu"), and 'version' of the OS (e.g., "12.10")
+        from /etc/os-release, and concatenates them separated by a space (so
+        "ubuntu 12.10").
+
+        It returns the result of calling:
+
+            choose(version_name)
+
+        So, on an Ubuntu system (which also includes a Linux Mint system, since its
+        /etc/os-release identifies it as the underlying Ubuntu system), one might
+        do:
+
+            choice = Choice([ ('ubuntu-12.*', 'package-v12'),
+                              ('ubuntu-1?.*', 'package-v10'),
+                              'package-v7' ])
+            choice.choose_to_match_os()
+
+        to choose the appropriate version of "package" depending on the OS.
+        """
+
+        if version_name is None:
+            version_name = get_os_version_name()
+        try:
+            return self.choose(version_name)
+        except ValueError:
+            raise GiveUp('Given\n'
+                         '  %s\n'
+                         'and OS %r, cannot find a match'%(self, version_name))
 
 # End file.

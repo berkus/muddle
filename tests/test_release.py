@@ -10,6 +10,7 @@ import os
 import pprint
 import sys
 import textwrap
+import traceback
 
 from ConfigParser import NoSectionError
 from subprocess import CalledProcessError
@@ -463,7 +464,7 @@ def check_program(d, path, progname, outname=None):
     fullname = d.join(fullpath, progname)
     if not os.path.exists(fullname):
         raise GiveUp('Program {0} does not exist'.format(fullname))
-    result = get_stdout(fullname)
+    result = run1(fullname, show_output=True)
     if result != 'Program {0}\n'.format(outname):
         raise GiveUp('Program {0} unexpectdly printed out "{1}"'.format(fullpath, result))
 
@@ -701,7 +702,7 @@ def check_release_directory(release_dir):
         text = captured_muddle(['pull', '_all'])
         print text
         raise GiveUp('"muddle pull _all" did not fail')
-    except subprocess.CalledProcessError as e:
+    except CalledProcessError as e:
         if 'Command pull is not allowed in a release build' not in e.output:
             raise GiveUp('Unexpected error text in "muddle pull _all":'
                          ' %d, %s'%(e.returncode, e.output.strip()))
@@ -757,7 +758,7 @@ def check_release_directory(release_dir):
         try:
             text = captured_muddle(['-n', 'build', '_release'])
             raise GiveUp('"muddle -n build _release" should have failed')
-        except subprocess.CalledProcessError as e:
+        except CalledProcessError as e:
             check_text_v_lines(e.output,[
                 '',
                 'Argument "package:fred{arm}/*" does not match any target labels',

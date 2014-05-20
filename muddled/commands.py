@@ -3488,7 +3488,7 @@ class Doc(Command):
 @subcommand('stamp', 'save', CAT_EXPORT)
 class StampSave(Command):
     """
-    :Syntax: muddle stamp save [<switche>] [<filename>]
+    :Syntax: muddle stamp save [<switches>] [<filename>]
 
     Go through each checkout, and save its remote repository and current
     brach/revision id/number to a file.
@@ -4902,6 +4902,27 @@ class Distribute(CPDCommand):
           the muddle Makefiles needed by each package (as the only file in
           each appropriate checkout directory)
 
+        * "_deployment" - this is a distribution of the deploy directory,
+          and all its subdirectories, as well as a version stamp. It can be
+          useful for customers who do not yet have the ability to use muddle
+          (as is necessary with a _binary_release).
+
+          It is generally necessary to specify the deployment labels as
+          <label> arguments, and the labels used will be written to a
+          MANIFEST.txt file.
+
+          Note that it is done by a different mechanism than the other
+          commands, specificaly more or less as if the user had done::
+
+              muddle deploy <label> ...
+              mkdir -p <target_directory>
+              cp -a deploy <target_directory>
+              muddle stamp save <target_directory>/`muddle query name`.stamp
+              cat "muddle distribute _deployment <target_directory> <labels>" \
+                      > <target_directory>/MANIFEST.txt
+
+          Consequently, the switches are not allowed with this variant.
+
         * "_for_gpl" is a distribution that satisfies the GPL licensing
           requirements. It is all checkouts that have an explicit GPL
           license (including LGPL), plus any licenses which depend on them,
@@ -5044,6 +5065,10 @@ class Distribute(CPDCommand):
         if name is None or target_dir is None:
             raise GiveUp("Syntax: muddle distribute [<switches>] <name> <target_directory>")
 
+        if name == '_deployment':
+            self.deployment(builder, current_dir, target_dir, fragments)
+            return
+
         if fragments:
             co_labels, pkg_labels = self.decode_args(builder, fragments, current_dir)
             #print 'Package labels chosen:', label_list_to_string(pkg_labels, join_with=', ')
@@ -5119,6 +5144,26 @@ class Distribute(CPDCommand):
             raise GiveUp('\n'.join(text))
 
         return checkout_set, package_set
+
+    def deployment(self, builder, current_dir, target_dir, fragments):
+        """Do "muddle distribute _deployment".
+        """
+        if self.switches:
+            raise GiveUp('"muddle distribute _deployment" does not take any of the normal'
+                         ' "muddle distribute" switches')
+
+        # As it says in the help text...
+        deploy = Deploy()
+        deploy.with_build_tree(builder, current_dir, fragments)
+        os.makedirs(target_dir)
+        utils.copy_without(os.path.join(builder.db.root_path, 'deploy'),
+                           os.path.join(target_dir, 'deploy'),
+                           preserve=True)   # definitely want to preserve executable flag
+        stamper = StampSave()
+        stamper.with_build_tree(builder, current_dir,
+                                [os.path.join(target_dir, '%s.stamp'%(builder.build_name))])
+        with open(os.path.join(target_dir, "MANIFEST.txt"), 'w') as fd:
+            fd.write("muddle distribute _deployment %s %s\n"%(target_dir, ' '.join(fragments)))
 
 # -----------------------------------------------------------------------------
 # Release
@@ -6368,32 +6413,42 @@ class Status(CheckoutCommand):
         verbose = ('verbose' in self.switches)
         joined = ('join' in self.switches)
 
-        something_needs_doing = 0
         something = []
         for co in labels:
+            if not builder.db.is_tag(co):
+                print
+                print '%s is not checked out'%co
+                something.append(co)
+                continue
+
             try:
                 vcs_handler = builder.db.get_checkout_vcs(co)
             except GiveUp:
                 print "Rule for label '%s' has no VCS - cannot find its status"%co
+                something.append(co)
                 continue
-            text = vcs_handler.status(builder, co, verbose)
+
+            try:
+                text = vcs_handler.status(builder, co, verbose)
+            except MuddleBug as err:
+                raise MuddleBug('Giving up in %s because:\n%s'%(co,err))
+            except GiveUp as err:
+                print err
+                something.append(co)
+                continue
+
             if text:
                 print
                 print text.strip()
-                something_needs_doing += 1
                 something.append(co)
-        if something_needs_doing:
+
+        if something:
             if joined:
                 raise GiveUp('The following checkouts need attention:\n  '
                              '%s'%(label_list_to_string(something)))
             else:
                 raise GiveUp('The following checkouts need attention:\n  '
                              '%s'%(label_list_to_string(something, join_with='\n  ')))
-            #if something_needs_doing == 1:
-            #    raise GiveUp('Checkout %s needs attention'%something[0])
-            #else:
-            #    raise GiveUp('The following checkouts need attention:\n  '
-            #                 '%s'%(label_list_to_string(something, join_with='\n  ')))
         else:
             print 'All checkouts seemed clean'
 

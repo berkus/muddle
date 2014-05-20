@@ -49,21 +49,25 @@ class Bazaar(VersionControlSystem):
         self.long_name = 'Bazaar'
         self.allowed_options.add('no_follow')
 
-    def _pruned_cmd_data(self, cmd, env=None, isSystem=False, fold_stderr=True,
-                         verbose=False, fail_nonzero=True):
+    def _run2(self, cmd, env=None, verbose=False):
+        """Run command, prune output, return return code and output.
         """
-        A thunk around _prune_spurious_bzr_output applied to
-        utils.get_cmd_data
+        rc, output = utils.run2(cmd, env=env, show_command=verbose)
+        return rc, self._prune_spurious_bzr_output(output)
+
+    def _run1(self, cmd, env=None, verbose=False, fold_stderr=True):
+        """Run command, prune output, return just that.
+
+        If fold_stderr is False, then ignore any stderr output.
         """
-        retcode, text, error = utils.get_cmd_data(cmd, env=env,
-                                                   isSystem=isSystem,
-                                                   fold_stderr=fold_stderr,
-                                                   verbose=verbose,
-                                                   fail_nonzero=fail_nonzero)
-        if text:
-            text = self._prune_spurious_bzr_output(text)
-        # XXX Do we need to consider pruning 'error' as well?
-        return retcode, text, error
+        if fold_stderr:
+            rc, output = utils.run2(cmd, env=env, show_command=verbose)
+        else:
+            rc, output, errors = utils.run3(cmd, env=env, show_command=verbose)
+        if rc:
+            raise utils.ShellError(cmd, rc, output)
+        else:
+            return self._prune_spurious_bzr_output(output)
 
     def _prune_spurious_bzr_output(self, in_str):
         """
@@ -138,7 +142,7 @@ class Bazaar(VersionControlSystem):
         """
         # This is *really* hacky...
         if not os.path.exists('.bzr'):
-            utils.run_cmd("bzr init", env=self._derive_env(), verbose=verbose)
+            utils.shell("bzr init", env=self._derive_env(), show_command=verbose)
 
     def add_files(self, files=None, verbose=True):
         """
@@ -147,7 +151,7 @@ class Bazaar(VersionControlSystem):
         Will be called in the actual checkout's directory.
         """
         if files:
-            utils.run_cmd("bzr add %s"%' '.join(files))
+            utils.shell("bzr add %s"%' '.join(files))
 
     def checkout(self, repo, co_leaf, options, verbose=True):
         """
@@ -165,10 +169,10 @@ class Bazaar(VersionControlSystem):
         if repo.branch:
             raise utils.GiveUp("Bazaar does not support branch (in the muddle sense)"
                                " in 'checkout' (branch='%s')"%repo.branch)
-        utils.run_cmd("bzr branch %s %s %s"%(self._r_option(repo.revision),
-                                             self._normalised_repo(repo.url),
-                                             co_leaf),
-                      env=self._derive_env(), verbose=verbose)
+        utils.shell("bzr branch %s %s %s"%(self._r_option(repo.revision),
+                                          self._normalised_repo(repo.url),
+                                          co_leaf),
+                   env=self._derive_env(), show_command=verbose)
 
     def _is_it_safe(self, env):
         """
@@ -198,9 +202,8 @@ class Bazaar(VersionControlSystem):
 
         starting_revno = self._just_revno()
 
-        retcode, text, ignore = self._pruned_cmd_data("bzr pull %s %s"%(rspec,
-                                                    self._normalised_repo(repo.url)),
-                                                env=env, verbose=verbose)
+        text = self._run1("bzr pull %s %s"%(rspec, self._normalised_repo(repo.url)),
+                          env=env, verbose=verbose)
         print text
         if (text.startswith('No revisions to pull')  # older versions of bzr
             or
@@ -211,8 +214,8 @@ class Bazaar(VersionControlSystem):
             # First we 'uncommit' to take our history back. The --force answers
             # 'yes' to all questions (otherwise the user would be prompted as
             # to whether they really wanted to do this operation
-            retcode, text, ignore = self._pruned_cmd_data("bzr uncommit --force --quiet %s"%rspec,
-                                                    env=env, verbose=verbose)
+            retcode, text = self._run2("bzr uncommit --force --quiet %s"%rspec,
+                                       env=env, verbose=verbose)
             if retcode:
                 raise utils.GiveUp('Error uncommiting to revision %s (we already tried'
                                    ' pull)\nReturn code  %d\n%s'%(rspec, retcode, text))
@@ -221,8 +224,8 @@ class Bazaar(VersionControlSystem):
             # doesn't change our working set). The --no-backup stops us
             # being left with copies of the changes in backup files (which
             # is exactly what we don't want)
-            retcode, text, ignore = self._pruned_cmd_data("bzr revert --no-backup %s"%rspec,
-                                                    env=env, verbose=verbose)
+            retcode, text = self._run2("bzr revert --no-backup %s"%rspec,
+                                       env=env, verbose=verbose)
             if retcode:
                 raise utils.GiveUp('Error reverting to revision %s (we already'
                                    ' uncommitted)\nReturn code %d\n%s'%(rspec, retcode, text))
@@ -253,8 +256,8 @@ class Bazaar(VersionControlSystem):
 
         starting_revno = self._just_revno()
 
-        utils.run_cmd("bzr merge %s %s"%(rspec, self._normalised_repo(other_repo.url)),
-                      env=env, verbose=verbose)
+        utils.shell("bzr merge %s %s"%(rspec, self._normalised_repo(other_repo.url)),
+                   env=env, show_command=verbose)
 
         ending_revno = self._just_revno()
         # Did we update anything?
@@ -276,16 +279,16 @@ class Bazaar(VersionControlSystem):
             cmdlist.extend(['--unchanged', '-m', commit_message_text])
         # Options: --strict means it will not commit if there are unknown
         # files in the working tree
-        utils.run_cmd(cmdlist, allowFailure=True,
-                      env=self._derive_env(), verbose=verbose)
+        utils.shell(cmdlist, allowFailure=True,
+                    env=self._derive_env(), show_command=verbose)
 
     def push(self, repo, options, upstream=None, verbose=True):
         """
         Will be called in the actual checkout's directory.
         """
 
-        utils.run_cmd("bzr push %s"%self._normalised_repo(repo.url),
-                      env=self._derive_env(), verbose=verbose)
+        utils.shell("bzr push %s"%self._normalised_repo(repo.url),
+                   env=self._derive_env(), show_command=verbose)
 
     def status(self, repo, options=None, branch=None, verbose=False):
         """
@@ -298,7 +301,7 @@ class Bazaar(VersionControlSystem):
         # --quiet means only report warnings and errors
         cmd = 'bzr status --quiet -r branch:%s'%self._normalised_repo(repo.url),
 
-        retcode, text, ignore = self._pruned_cmd_data(cmd, env=env, fold_stderr=False)
+        text = self._run1(cmd, env=env, fold_stderr=False)
         if text:
             return text
         else:
@@ -456,7 +459,7 @@ class Bazaar(VersionControlSystem):
         <text> is its output.
         """
         cmd = 'bzr version-info --check-clean'
-        retcode, text, ignore = self._pruned_cmd_data(cmd, env=env, fold_stderr=False)
+        text = self._run1(cmd, env=env, fold_stderr=False)
         if 'clean: False' in text:
             return False, cmd, text
         return True, cmd, None
@@ -469,25 +472,26 @@ class Bazaar(VersionControlSystem):
         Return (True, <cmd>) if it is missing, (False, <cmd>) if it is not
         """
         cmd = 'bzr missing -q --mine-only'
-        retcode, missing, ignore = self._pruned_cmd_data(cmd, env=env,
-                                                      fold_stderr=True,
-                                                      fail_nonzero=False)
+        # We don't want to fail if we get a non-zero return code
+        retcode, missing = self._run2(cmd, env=env)
         return missing, cmd
 
     def _revision_id(self, env, revspec):
         """Find the revision id for revision 'revspec'
         """
         cmd = "bzr log -l 1 -r '%s' --long --show-ids"%revspec
-        retcode, text, ignore = self._pruned_cmd_data(cmd, env=env, fail_nonzero=False)
+        retcode, text = self._run2(cmd, env=env)
         if retcode != 0:
             raise utils.GiveUp("'%s' failed with return code %d\n%s"%(cmd, retcode, text))
         # Let's look for the revision-id field therein
+
         lines = text.split('\n')
         for line in lines:
             line = line.strip()
             parts = line.split(':')
             if parts[0] == 'revision-id':
                 revision = ':'.join(parts[1:]) # although I hope there aren't internal colons!
+
                 return revision.strip()
         raise utils.GiveUp("'%s' did not return text containing 'revision-id:'"
                            "\n%s"%(cmd, text))
@@ -612,7 +616,7 @@ class Bazaar(VersionControlSystem):
         """
         This returns the revision number for the working tree
         """
-        retcode, revision, ignore = self._pruned_cmd_data('bzr revno --tree')
+        retcode, revision = self._run2('bzr revno --tree')
         return revision.strip()
 
     def allows_relative_in_repo(self):
@@ -622,8 +626,8 @@ class Bazaar(VersionControlSystem):
         """
         Retrieve a file's content via BZR.
         """
-        retcode, text, ignore = self._pruned_cmd_data('bzr cat %s'%self._normalised_repo(url),
-                                                      fold_stderr=False, verbose=verbose)
+        retcode, text = self._run2('bzr cat %s'%self._normalised_repo(url),
+                                   fold_stderr=False, verbose=verbose)
         return text
 
     def get_vcs_special_files(self):

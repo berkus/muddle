@@ -2,14 +2,15 @@
 
 This is the muddle version. It is close to that at
 https://github.com/tibs/withdir, but integrated with muddle - specifically, it
-uses muddle's MuddleBug exception instead of the withdir GiveUp.
+uses muddle's GiveUp exception.
 """
 
 import os
+import sys
 import shutil
 import tempfile
 
-from muddled.utils import normalise_dir, MuddleBug
+from muddled.utils import normalise_dir, GiveUp
 
 class Directory(object):
     """A class to facilitate pushd/popd behaviour
@@ -27,7 +28,7 @@ class Directory(object):
 
     'where' is the directory to change to. The value 'self.where' will be
     set to a normalised version of 'where'. It is an error if the directory
-    does not exist, in which case a MuddleBug exception will be raised.
+    does not exist, in which case a GiveUp exception will be raised.
 
     If 'stay_on_error' is true, then the directory will not be left ("popd"
     will not be done) if an exception occurs in its 'with' clause.
@@ -56,7 +57,7 @@ class Directory(object):
         try:
             os.chdir(self.where)
         except OSError as e:
-            raise MuddleBug('Cannot change to directory %s: %s\n'%(where, e))
+            raise GiveUp('Cannot change to directory %s: %s\n'%(where, e))
 
         if set_PWD:
             if 'PWD' in os.environ:
@@ -68,7 +69,7 @@ class Directory(object):
             os.environ['PWD'] = self.where
 
         if show_pushd:
-            print '++ pushd to %s'%self.where
+            sys.stdout.write('++ pushd to %s\n'%self.where)
 
     def join(self, *args):
         """Return ``os.path.join(self.where, *args)``.
@@ -85,7 +86,7 @@ class Directory(object):
                 del os.environ['PWD']
 
         if self.show_popd:
-            print '++ popd to  %s'%self.start
+            sys.stdout.write('++ popd to  %s\n'%self.start)
 
     def __enter__(self):
         return self
@@ -97,12 +98,12 @@ class Directory(object):
         else:
             # An exception occurred, so do any tidying up necessary
             if self.show_popd:
-                print '** Oops, an exception occurred - %s tidying up'%self.__class__.__name__
+                sys.stdout.write('** Oops, an exception occurred - %s tidying up\n'%self.__class__.__name__)
             # well, there isn't anything special to do, really
             if self.close_on_error:
                 self.close()
             if self.show_popd:
-                print '** ----------------------------------------------------------------------'
+                sys.stdout.write('** ----------------------------------------------------------------------\n')
             # And allow the exception to be re-raised
             return False
 
@@ -110,7 +111,7 @@ class NewDirectory(Directory):
     """A pushd/popd directory that gets created first.
 
     If 'where' is given, then it is the directory to change to. In this case it
-    is an error if the directory already exists, in which case a MuddleBug
+    is an error if the directory already exists, in which case a GiveUp
     exception will be raised.
 
     If 'where' is None, then tempfile.mkdtemp() will be used to create a
@@ -145,14 +146,14 @@ class NewDirectory(Directory):
             where = tempfile.mkdtemp()
             if show_dirops:     # Obviously, this is a bit of a bluff
                 # The extra spaces are to line up with 'pushd to'
-                print '++ mkdir    %s'%where
+                sys.stdout.write('++ mkdir    %s\n'%where)
         else:
             where = normalise_dir(where)
             if os.path.exists(where):
-                raise MuddleBug('Directory %s already exists'%where)
+                raise GiveUp('Directory %s already exists'%where)
             if show_dirops:
                 # The extra spaces are to line up with 'pushd to'
-                print '++ mkdir    %s'%where
+                sys.stdout.write('++ mkdir    %s\n'%where)
             os.makedirs(where)
         super(NewDirectory, self).__init__(where, stay_on_error, show_pushd,
                                            show_popd, set_PWD)
@@ -161,7 +162,7 @@ class TransientDirectory(NewDirectory):
     """A pushd/popd directory that gets created first and deleted afterwards
 
     If 'where' is given, then it is the directory to change to. In this case it
-    is an error if the directory already exists, in which case a MuddleBug
+    is an error if the directory already exists, in which case a GiveUp
     exception will be raised.
 
     If 'where' is None, then tempfile.mkdtemp() will be used to create a
@@ -213,7 +214,7 @@ class TransientDirectory(NewDirectory):
             if self.show_dirops:
                 # The extra space after 'rmtree' is so the directory name
                 # left aligns with any previous 'popd  to' message
-                print '++ rmtree   %s'%self.where
+                sys.stdout.write('++ rmtree   %s\n'%self.where)
             shutil.rmtree(self.where)
 
     def __exit__(self, etype, value, tb):
@@ -223,11 +224,11 @@ class TransientDirectory(NewDirectory):
         else:
             # An exception occurred, so do any tidying up necessary
             if self.show_popd:
-                print '** Oops, an exception occurred - %s tidying up'%self.__class__.__name__
+                sys.stdout.write('** Oops, an exception occurred - %s tidying up\n'%self.__class__.__name__)
             if self.close_on_error:
                 self.close(self.rmtree_on_error)
             if self.show_popd:
-                print '** ----------------------------------------------------------------------'
+                sys.stdout.write('** ----------------------------------------------------------------------\n')
             # And allow the exception to be re-raised
             return False
 

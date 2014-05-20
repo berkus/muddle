@@ -60,16 +60,16 @@ class Subversion(VersionControlSystem):
         Will be called in the actual checkout's directory.
         """
         if files:
-            utils.run_cmd("svn add %s"%' '.join(files), verbose=verbose)
+            utils.shell(["svn", "add"] + list(files), show_command=verbose)
 
     def _r_option(self, revision):
         """
         Return the -r option to pass to svn commands, if any
         """
         if revision is None or revision == "HEAD":
-            return ""
+            return []
         else:
-            return "-r %s"%revision
+            return ["-r", revision]
 
     def checkout(self, repo, co_leaf, options, verbose=True):
         """
@@ -82,8 +82,8 @@ class Subversion(VersionControlSystem):
         if repo.branch:
             raise utils.GiveUp("Subversion does not support branch"
                                " in 'checkout' (branch='%s')"%repo.branch)
-        utils.run_cmd("svn checkout %s %s %s"%(self._r_option(repo.revision),
-                                               repo.url, co_leaf), verbose=verbose)
+        utils.shell(["svn", "checkout"] + self._r_option(repo.revision) +
+                   [repo.url, co_leaf], show_command=verbose)
 
     def pull(self, repo, options, upstream=None, verbose=True):
         """
@@ -99,7 +99,7 @@ class Subversion(VersionControlSystem):
         if repo.branch:
             raise utils.GiveUp("Subversion does not support branch"
                                " in 'pull' (branch='%s')"%repo.branch)
-        retcode, text, ignore = utils.get_cmd_data("svn status")
+        text = utils.get_cmd_data("svn status")
         for line in text:
             if 'C' in (line[0], line[1], line[6]):
                 raise utils.GiveUp("%s: 'svn status' says there is a Conflict,"
@@ -108,7 +108,7 @@ class Subversion(VersionControlSystem):
 
         starting_revno = self._just_revno()
 
-        utils.run_cmd("svn update %s"%(self._r_option(repo.revision)), verbose=verbose)
+        utils.shell(["svn", "update"] + self._r_option(repo.revision), show_command=verbose)
 
         # We could try parsing the output of 'svn update' instead, but this is
         # simpler to do...
@@ -131,7 +131,8 @@ class Subversion(VersionControlSystem):
 
         starting_revno = self._just_revno()
 
-        utils.run_cmd("svn update %s"%(self._r_option(other_repo.revision)), verbose=verbose)
+        utils.shell(["svn", "update"] +  self._r_option(other_repo.revision),
+                   show_command=verbose)
 
         ending_revno = self._just_revno()
         # Did we update anything?
@@ -162,7 +163,7 @@ class Subversion(VersionControlSystem):
         This actually does a "svn commit", i.e., committing to the remote
         repository (which is the only one subversion has).
         """
-        utils.run_cmd("svn commit", verbose=verbose)
+        utils.shell(["svn", "commit"], show_command=verbose)
 
     def status(self, repo, options):
         """
@@ -170,7 +171,7 @@ class Subversion(VersionControlSystem):
 
         Return status text or None if there is no interesting status.
         """
-        retcode, text, ignore = utils.get_cmd_data("svn status --show-updates --verbose")
+        text = utils.get_cmd_data("svn status --show-updates --verbose")
 
         lines = text.split('\n')
         stuff = []
@@ -237,7 +238,7 @@ class Subversion(VersionControlSystem):
         if before:
             raise utils.GiveUp('%s: "before" argument not currently supported'%co_leaf)
 
-        retcode, revision, ignore = utils.get_cmd_data('svnversion', verbose=verbose)
+        revision = utils.get_cmd_data('svnversion', show_command=verbose)
         revision = revision.strip()
         if all([x.isdigit() for x in revision]):
             return revision
@@ -249,7 +250,7 @@ class Subversion(VersionControlSystem):
         """
         This returns the revision number for the working tree
         """
-        retcode, revision, ignore = utils.get_cmd_data('svnversion')
+        revision = utils.get_cmd_data('svnversion')
         return revision.strip()
 
     def allows_relative_in_repo(self):
@@ -262,9 +263,7 @@ class Subversion(VersionControlSystem):
         """
         Retrieve a file's content via Subversion.
         """
-        retcode, text, ignore = utils.get_cmd_data('svn cat %s'%url,
-                                                   fold_stderr=False,
-                                                   verbose=verbose)
+        text = utils.get_cmd_data('svn cat %s'%url, show_command=verbose)
         return text
 
     def must_pull_before_commit(self, options):
