@@ -1,8 +1,46 @@
 """
 Muddle support for Subversion
 
-.. to be documented ..
+* muddle checkout
 
+  Does "svn checkout".
+
+* muddle pull, muddle pull-upstream
+
+  "muddle pull" does "svn update", but only if no merging would be required (as
+  reported by "svn status").
+
+  "muddle pull-upstream" is a meaningless concept, and is treated no
+  differently than "muddle pull".
+
+* muddle push, muddle push-upstream
+
+  "muddle push" does "svn commit", but does not support any switches.
+
+  "muddle push-upstream" is a meaningless concept, and is treated no
+  differently than "muddle push".
+
+* muddle merge
+
+  "muddle merge" does "svn update", allowing merging if necessary.
+
+* muddle commit
+
+  "muddle commit" does "svn commit". Remember that the repository is always
+  "remote".
+
+  Switches may be used to specify a commit message (see "muddle help commit").
+
+* muddle status
+
+  "muddle status" does "svn status --show-updates --verbose"
+
+* muddle reparent
+
+  "muddle reparent" does not do anything.
+
+Other Subversion specific notes
+-------------------------------
 Note that Subversion does not support "branches" in the muddle sense.
 Subversion branches are handled by a different mechanism, and in a muddle
 sense are more like inner paths of a Repository. At the moment muddle does
