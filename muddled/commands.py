@@ -5784,15 +5784,20 @@ class Commit(CheckoutCommand):
     Also, if $EDITOR is not set, then this switch will default to using 'vi',
     which is quite likely not what you want.
 
-    TODO: If we are using this for lifecycle work (after "muddle branch-tree")
-    then we will end up trying to commit things with no change, except the
-    creation of a branch. It seems likely that we want "muddle commit" to
-    translate to:
+        Note: you cannot combine '-m', '-F' and '-e'; only one is allowed.
 
-        * for git, we probably want --allow-empty, to allow "empty" commits
-        * for bzr, the equivalent sounds like --unchanged
+    Use with a muddle lifecycle (after "muddle branch-tree")
+    --------------------------------------------------------
+    If we are using this for lifecycle work (after "muddle branch-tree")
+    then we will end up trying to commit things with no change, except the
+    creation of a branch. Thus:
+
+        * for git, we use --allow-empty, to allow "empty" commits
+        * for bzr, the equivalent seems to be --unchanged; this is largely
+          unverified, as we do not currently use bzr in-house
         * I don't know what svn does with an empty/unchanged commit, and there
-          doesn't seem to be an equivalent switch.
+          doesn't seem to be an equivalent switch, so this case is not
+          treated specially
 
     For an empty commit there are two choices: (1) enforce the commit, which
     has the advantage of putting the commit message into all the checkouts,
@@ -5800,13 +5805,8 @@ class Commit(CheckoutCommand):
     be the only thing we can do for svn (i.e., check if there's a change and
     do nothing if there isn't). Since "muddle commit" only *really* becomes
     useful over many checkouts for things like "muddle branch-tree", where it
-    is invaluable, I'd want to go for (1) if a commit message is specified,
-    and if it is not, either keep the current situation (it fails), or else try
-    option (2) - although that's more work for little return, I think.
-
-    For the moment, I've gone (see vcs/git.py and vcs/bzr.py) with option (1)
-    if there's a message text/file, and the old behaviour (fail) if there is
-    not.
+    is invaluable, we try for (1) - see vcs/git.py and vcs/bzr.py - if there's
+    a message text/file, and the old behaviour (fail) if there is not.
 
     BUT if the reason we're doing this is for "muddle branch-dist", and we're
     just trying to propagate the (newly created) branch to the far repositories,
@@ -5822,6 +5822,9 @@ class Commit(CheckoutCommand):
 
     [1] well, except presumably for the build description, which will have
         gained a "follow me" statement.
+
+    This confusion all suggests that in such a case the build should maybe be
+    using welds (see http://weld.readthedocs.org/en/latest/intro.html#why-weld).
     """
 
     # XXX Is this correct?
