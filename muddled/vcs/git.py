@@ -1,8 +1,6 @@
 """
 Muddle suppport for Git.
 
-TODO: The following needs rewriting after work for issue 225
-
 * muddle checkout
 
   Clones the appropriate checkout with ``git clone``.
@@ -22,15 +20,17 @@ TODO: The following needs rewriting after work for issue 225
 
   (the emphasis is mine).
 
-  If a revision is requested, then ``git checkout`` is used to check it out.
-
-  If a branch *and* a revision are requested, then muddle checks to see if
-  cloning the branch gave the correct revision, and only does the ``git
-  checkout`` if it did not. This avoids unnecessary detached HEADs,
+  If a revision is requested, then muddle checks to see if the clone already
+  gave the correct revision. If it did not, it uses ``git checkout`` to select
+  it. Avoiding unnecessary use of ``git checkout`` avoids unnecessary detached
+  HEADs,
 
   Note: the checking of the revision id is very simple, and assumes that
   the revision is specified as a full SHA1 string (it is compared with the
   output of ``git rev-parse HEAD``).
+
+  Also, if a branch and a revision are requested, the branch is cloned, and
+  then the revision is checked for, in that order.
 
 * muddle pull, muddle pull-upstream
 
@@ -68,7 +68,11 @@ TODO: The following needs rewriting after work for issue 225
 
 * muddle commit
 
-  Simply runs ``git commit -a``.
+  Runs ``git commit -a``, so that any modified files will be automatically
+  staged and then committed.
+
+  If the user specifies a commit message (by whatever means), then uses that -
+  see "muddle help commit" for more details.
 
 * muddle status
 
