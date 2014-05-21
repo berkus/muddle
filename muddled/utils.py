@@ -975,7 +975,7 @@ def truncate(text, columns=None, less=0):
     return text
 
 
-def dynamic_load(filename, no_pyc=False):
+def dynamic_load(filename, no_pyc=True):
     """Load the Python script 'filename'.
 
     If 'no_pyc', then prevent generation of a ".pyc" file.

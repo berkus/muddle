@@ -133,10 +133,8 @@ def main(args):
 
     def test_aptget(choice, exc_str=None):
         with Directory(os.path.join('src', 'builds')) as srcdir:
-            if os.path.exists('01.py'):
-                os.remove('01.py')
-            if os.path.exists('01.pyc'):
-                os.remove('01.pyc')
+            rm_if_exists('01.py')
+            rm_if_exists('01.pyc')
             touch('01.py', BUILD_DESC%choice)
             rc, text = captured_muddle2(['query', 'checkouts'])
             print text.strip()

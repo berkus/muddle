@@ -5,6 +5,7 @@
 For once, intended to be safe for use with ``from support_for_tests import *``
 """
 
+import errno
 import os
 import shutil
 import subprocess
@@ -293,6 +294,16 @@ def check_nosuch_files(paths, verbose=True):
                 sys.sydout.write('  -- %s\n'%name)
     if verbose:
         flushing_print('++ All named files do not exist\n')
+
+@export
+def rm_if_exists(pathname):
+    """Delete the named file if it exists.
+    """
+    try:
+        os.remove(pathname)
+    except OSError as e:
+        if e.errno != errno.ENOENT:
+            raise
 
 @export
 def banner(text, level=1):

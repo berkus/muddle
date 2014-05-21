@@ -168,7 +168,7 @@ def setup_new_build(root_repo, name):
                 touch('01.py', CHECKOUT_BUILD_LEVELS)
                 # Then remove the .pyc file, because Python probably won't realise
                 # that this new 01.py is later than the previous version
-                os.remove('01.pyc')
+                rm_if_exists('01.pyc')
                 git('add 01.py')
                 git('commit -m "New build"')
                 git('push %s/builds HEAD'%root_repo)
@@ -363,7 +363,7 @@ def test_just_pulled():
                 append('01.py', '# Just a comment\n')
                 # Then remove the .pyc file, because Python probably won't realise
                 # that this new 01.py is later than the previous version
-                os.remove('01.pyc')
+                rm_if_exists('01.pyc')
                 git('commit -a -m "A simple change"')
                 muddle(['push'])
             with Directory('twolevel'):

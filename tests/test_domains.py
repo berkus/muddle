@@ -1163,7 +1163,7 @@ def test_label_unification_1(root_dir, d):
 
     # Then remove the .pyc file, because Python probably won't realise
     # that this new 01.py is later than the previous version
-    os.remove(d.join('src', 'builds', '01.pyc'))
+    rm_if_exists(d.join('src', 'builds', '01.pyc'))
 
     # Check it all worked
     text = muddle_stdout("{muddle} query needed-by package:second_pkg{{x86}}/preconfig")
@@ -1200,7 +1200,7 @@ def test_label_unification(root_dir, d):
     # that this new 01.py is later than the previous version (the mtime
     # of our modified file is probably within the same second as the mtime
     # of the original file)
-    os.remove(build_description+'c')
+    rm_if_exists(build_description+'c')
 
     # After...
     text = muddle_stdout("{muddle} query needed-by 'package:first_pkg{{x86}}/preconfig'")
@@ -1222,7 +1222,7 @@ def test_label_unification(root_dir, d):
         raise GiveUp('Pre UNIFY_1_SUB1_TWOJUMP check failed:\n{0}'.format(text))
     build_description = d.join('domains', 'subdomain1', 'src', 'builds','01.py')
     append(build_description, UNIFY_1_SUB1_TWOJUMP)
-    os.remove(build_description+'c')
+    rm_if_exists(build_description+'c')
 
     # After...
     text = muddle_stdout("{muddle} query needed-by 'package:(subdomain1(subdomain3))first_pkg{{x86}}/preconfig'")
@@ -1251,7 +1251,7 @@ def test_label_unification(root_dir, d):
 
     #build_description = d.join('src','builds','01.py')
     #append(build_description, UNIFY_5_MAIN_PACKAGES)
-    #os.remove(build_description+'c')
+    #rm_if_exists(build_description+'c')
 
 def main(args):
 

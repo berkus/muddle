@@ -151,7 +151,7 @@ def test_svn_revisions_build():
                 touch('01.py', CHECKOUT_BUILD_SVN_REVISIONS)
                 # Then remove the .pyc file, because Python probably won't realise
                 # that this new 01.py is later than the previous version
-                os.remove('01.pyc')
+                rm_if_exists('01.pyc')
                 svn('import . %s/builds -m "Initial import"'%root_repo)
 
             # Is the next really the best we can do?
@@ -198,7 +198,7 @@ def test_svn_revisions_build():
                 touch('01.py', CHECKOUT_BUILD_SVN_NO_REVISIONS)
                 # Then remove the .pyc file, because Python probably won't realise
                 # that this new 01.py is later than the previous version
-                os.remove('01.pyc')
+                rm_if_exists('01.pyc')
 
             with Directory('checkout1'):
                 muddle(['pull'])
@@ -222,7 +222,7 @@ def test_just_pulled():
                 touch('01.py', CHECKOUT_BUILD_SVN_NO_REVISIONS)
                 # Then remove the .pyc file, because Python probably won't realise
                 # that this new 01.py is later than the previous version
-                os.remove('01.pyc')
+                rm_if_exists('01.pyc')
                 svn('import . %s/builds -m "Initial import"'%root_repo)
 
             with TransientDirectory('checkout1'):
@@ -246,7 +246,7 @@ def test_just_pulled():
                 append('01.py', '# Just a comment\n')
                 # Then remove the .pyc file, because Python probably won't realise
                 # that this new 01.py is later than the previous version
-                os.remove('01.pyc')
+                rm_if_exists('01.pyc')
                 svn('commit -m "A simple change"')
                 muddle(['push'])
             with Directory('checkout1'):

@@ -417,7 +417,7 @@ def main(args):
                             append('01.py', '    builder.follow_build_desc_branch = True\n')
                             # Then remove the .pyc file, because Python probably won't realise
                             # that this new 01.py is later than the previous version
-                            os.remove('01.pyc')
+                            rm_if_exists('01.pyc')
 
             # It shouldn't make a difference - only the top-level build
             # description gets followed
@@ -460,7 +460,7 @@ def main(args):
                     append('01.py', '    builder.follow_build_desc_branch = True\n')
                     # Then remove the .pyc file, because Python probably won't realise
                     # that this new 01.py is later than the previous version
-                    os.remove('01.pyc')
+                    rm_if_exists('01.pyc')
 
             text = captured_muddle(['query', 'checkout-branches'])
             lines = text.splitlines()

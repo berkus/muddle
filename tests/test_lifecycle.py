@@ -207,7 +207,7 @@ def create_multiplex_repo(build_name):
         with Directory('builds') as builds:
             # Remove the .pyc file, because Python probably won't realise
             # that our new 01.py is/are later than the previous version
-            os.remove('01.pyc')
+            rm_if_exists('01.pyc')
             touch('01.py', EMPTY_BUILD_DESC)
             git('commit -a -m "Empty-ish build description"')
             # ---- branch0
@@ -450,7 +450,7 @@ def test_init_with_branch(root_d):
                                FOLLOW_LINE)
                 # Then remove the .pyc file, because Python probably won't realise
                 # that this new 01.py is later than the previous version
-                os.remove('01.pyc')
+                rm_if_exists('01.pyc')
         # And our checkout all should now fail...
         retcode, text = captured_muddle2(['checkout', '_all'])
         if retcode != 1:
@@ -473,7 +473,7 @@ or specify the 'no_follow' option.
                                FOLLOW_LINE)
                 # Then remove the .pyc file, because Python probably won't realise
                 # that this new 01.py is later than the previous version
-                os.remove('01.pyc')
+                rm_if_exists('01.pyc')
         # And our checkout _all should now be OK...
         muddle(['checkout', '_all'])
 
@@ -488,7 +488,7 @@ or specify the 'no_follow' option.
                                CO6_WHICH_HAS_NO_BRANCH_FOLLOW)
                 # Then remove the .pyc file, because Python probably won't realise
                 # that this new 01.py is later than the previous version
-                os.remove('01.pyc')
+                rm_if_exists('01.pyc')
         # And our checkout all should now fail...
         retcode, text = captured_muddle2(['checkout', '_all'])
         if retcode != 1:
@@ -576,7 +576,7 @@ Unable to branch-tree to test-v0.1, because:
                                FOLLOW_LINE)
                 # Then remove the .pyc file, because Python probably won't realise
                 # that this new 01.py is later than the previous version
-                os.remove('01.pyc')
+                rm_if_exists('01.pyc')
 
         muddle(['sync', '-v', '_all'])
 
@@ -595,7 +595,7 @@ Unable to branch-tree to test-v0.1, because:
                 append('01.py', '# This should make no difference\n')
                 # Then remove the .pyc file, because Python probably won't realise
                 # that this new 01.py is later than the previous version
-                os.remove('01.pyc')
+                rm_if_exists('01.pyc')
                 git('commit -a -m "Add a comment at the end"')
                 muddle(['push'])
             with Directory('co1'):
@@ -669,8 +669,8 @@ def test_lifecycle(root_d):
         muddle(['bootstrap', repo_url, build_name])
         with Directory('src'):
             with Directory('builds'):
-                os.remove('01.py')
-                os.remove('01.pyc')
+                rm_if_exists('01.py')
+                rm_if_exists('01.pyc')
                 touch('01.py', BUILD_DESC.format(build_name=build_name))
                 git('add 01.py')  # Because we changed it since the last 'git add'
                 git('commit -m "First commit of build description"')
@@ -745,7 +745,7 @@ def test_lifecycle(root_d):
                                                   build_name=build_name))
             # Then remove the .pyc file, because Python probably won't realise
             # that this new 01.py is later than the previous version
-            os.remove('01.pyc')
+            rm_if_exists('01.pyc')
         muddle(['checkout', '_all'])
 
         check_revision('co1', checkout_rev_2)
@@ -809,7 +809,7 @@ def test_lifecycle(root_d):
                                                     build_name=build_name))
                 # Then remove the .pyc file, because Python probably won't realise
                 # that this new 01.py is later than the previous version
-                os.remove('01.pyc')
+                rm_if_exists('01.pyc')
             with Directory('co1'):
                 git('checkout -b %s'%checkout_branch)
                 muddle(['status'])
@@ -835,7 +835,7 @@ def test_lifecycle(root_d):
                                                       build_name=build_name))
                 # Then remove the .pyc file, because Python probably won't realise
                 # that this new 01.py is later than the previous version
-                os.remove('01.pyc')
+                rm_if_exists('01.pyc')
             with Directory('co1'):
                 muddle(['status'])
                 # Doing 'muddle pull' is the obvious way to get us back to
@@ -863,7 +863,7 @@ def test_lifecycle(root_d):
                                                       build_name=build_name))
                 # Then remove the .pyc file, because Python probably won't realise
                 # that this new 01.py is later than the previous version
-                os.remove('01.pyc')
+                rm_if_exists('01.pyc')
             with Directory('co1'):
                 # We're still on the old revision, and detached
                 check_revision('co1', checkout_rev_3)
@@ -936,7 +936,7 @@ def test_lifecycle(root_d):
                 append('01.py', '    builder.follow_build_desc_branch = True\n')
                 # Then remove the .pyc file, because Python probably won't realise
                 # that this new 01.py is later than the previous version
-                os.remove('01.pyc')
+                rm_if_exists('01.pyc')
         # and sync again, our checkout should now follow the build
         # description's branch
         muddle(['sync', 'co1'])
@@ -973,7 +973,7 @@ def test_lifecycle(root_d):
                 append('01.py', '    builder.follow_build_desc_branch = True\n')
                 # Then remove the .pyc file, because Python probably won't realise
                 # that this new 01.py is later than the previous version
-                os.remove('01.pyc')
+                rm_if_exists('01.pyc')
 
         muddle(['runin', '_all_checkouts', 'git commit -a -m "Create maintenance branch"'])
         muddle(['push', '_all'])
