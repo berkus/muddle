@@ -975,7 +975,11 @@ def truncate(text, columns=None, less=0):
     return text
 
 
-def dynamic_load(filename):
+def dynamic_load(filename, no_pyc=False):
+    """Load the Python script 'filename'.
+
+    If 'no_pyc', then prevent generation of a ".pyc" file.
+    """
     try:
         try:
             with open(filename, 'rb') as fin:
@@ -988,7 +992,14 @@ def dynamic_load(filename):
         hasher = hashlib.md5()
         hasher.update(contents)
         md5_digest = hasher.hexdigest()
-        return imp.load_source(md5_digest, filename)
+        old_dont_write_bytecode = sys.dont_write_bytecode
+        try:
+            if no_pyc:
+                # Request that loading the file doesn't create a .pyc file
+                sys.dont_write_bytecode = True
+            return imp.load_source(md5_digest, filename)
+        finally:
+            sys.dont_write_bytecode = old_dont_write_bytecode
     except GiveUp:
         raise
     except Exception:
