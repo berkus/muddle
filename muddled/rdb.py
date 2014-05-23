@@ -12,6 +12,11 @@ us to do what we need).
 import os
 import sqlite3
 
+# XXX Temporary things, until we're part of muddle
+class GiveUp(Exception):
+    pass
+# XXX
+
 # Various columns indicate whether we have started/finished some action
 # For instance, we might have FINISHED checking a package's checkout out, but
 # be IN_PROGRESS building it, which means we will be NOT_DONE installing it.
@@ -22,27 +27,31 @@ NOT_DONE    = 0
 IN_PROGRESS = 1
 FINISHED    = 2
 
+VALID_STATES = (NOT_DONE, IN_PROGRESS, FINISHED)
+
+# We deliberately use our label types as table names, so that we can deduce
+# the table to use by dissecting the type out of a label.
 CREATE_TABLES = """\
-create table if not exists checkouts(
+create table if not exists checkout(
     id          text primary key,       -- the checkout domain/name
-    checkout    int                     -- state of checking the label out
+    checkout    int default 0           -- state of checking the label out
 );
 
-create table if not exists packages(
+create table if not exists package(
     id          text primary key,       -- the package domain/name/role
-    preconfig   int,                    -- state for pre-configuring
-    configure   int,                    -- state for configuring
-    build       int,                    -- state for building
-    install     int,                    -- state for installing
-    postinstall int,                    -- state for post-installing
+    preconfig   int default 0,          -- state for pre-configuring
+    configure   int default 0,          -- state for configuring
+    build       int default 0,          -- state for building
+    install     int default 0,          -- state for installing
+    postinstall int default 0,          -- state for post-installing
 
-    clean       int,                    -- state for cleaning
-    distclean   int                     -- state for distclean'ing
+    clean       int default 0,          -- state for cleaning
+    distclean   int default 0           -- state for distclean'ing
 );
 
-create table if not exists deployments(
+create table if not exists deployment(
     id          text primary key,       -- the deployment domain/name
-    deploy      int                     -- state of deploying the label
+    deploy      int default 0           -- state of deploying the label
 );
 """
 
@@ -69,8 +78,33 @@ class TagDatabase(object):
         with sqlite3.connect(self.db_path) as conn:
             conn.executescript(CREATE_TABLES)
 
+    def add_label(self, label):
+        """Add an empty row for a label.
+        """
+        label_type = 'checkout'     # XXX for the moment...
+        with sqlite3.connect(self.db_path) as conn:
+            conn.execute('insert into %s (id) values (?)'%label_type, (label,))
+
+    def set_tag(self, label, tag, state):
+        """Set the 'label's 'tag' value to 'state'.
+        """
+        if state not in VALID_STATES:
+            raise GiveUp('Cannot set label %s tag %s to state %s,'
+                         ' not in %s'%(label, tag, state, VALID_STATES))
+        label_type = 'checkout'     # XXX for the moment...
+        with sqlite3.connect(self.db_path) as conn:
+            # Unfortunately, I can't use "?" for the table name or the
+            # column name. Of course, those *should* be entirely under our
+            # control.
+            conn.execute('update %s set %s=? where id=?'%(label_type, tag),
+                    (state, label))
+
+
 if __name__ == '__main__':
 
     db = TagDatabase('.')
+    db.add_label('one')
+    db.add_label('two')
+    db.set_tag('one', 'checkout', FINISHED)
 
 # vim: set tabstop=8 softtabstop=4 shiftwidth=4 expandtab:
