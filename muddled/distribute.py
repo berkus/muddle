@@ -29,8 +29,9 @@ Actions and mechanisms relating to distributing build trees
 
 import os
 from fnmatch import fnmatchcase
+from muddled import utils
 
-from muddled.depend import Action, Rule, Label, needed_to_build, label_list_to_string
+from muddled.depend import Action, Rule, Label, needed_to_build
 from muddled.utils import GiveUp, MuddleBug, LabelTag, LabelType, \
         copy_without, normalise_dir, find_local_relative_root, \
         copy_file, domain_subpath, sort_domains
@@ -43,6 +44,7 @@ from muddled.licenses import get_gpl_checkouts, get_implicit_gpl_checkouts, \
         checkout_license_allowed, report_license_clashes, get_license, \
         report_license_clashes_in_role, ALL_LICENSE_CATEGORIES
 from muddled.withdir import Directory
+import muddled.db as db
 
 DEBUG=False
 VERBOSE=False       # should copy_without be quiet
@@ -832,22 +834,29 @@ def distribute_package(builder, name, label, obj=False, install=True,
             for name in actual_names:
                 distribute_checkout_files(builder, name, make_co, [makefile_name])
 
-def _set_checkout_tags(builder, label, target_dir):
+def _set_checkout_tags(builder, label, target_root):
     """Copy checkout muddle tags
     """
     root_path = normalise_dir(builder.db.root_path)
     local_root = find_local_relative_root(builder, label)
 
-    tags_dir = os.path.join('.muddle', 'tags', 'checkout', label.name)
-    src_tags_dir = os.path.join(root_path, local_root, tags_dir)
-    tgt_tags_dir = os.path.join(target_dir, local_root, tags_dir)
-    tgt_tags_dir = os.path.normpath(tgt_tags_dir)
-    if DEBUG:
-        print '..copying %s'%src_tags_dir
-        print '       to %s'%tgt_tags_dir
-    copy_without(src_tags_dir, tgt_tags_dir, preserve=True, verbose=VERBOSE)
+    src_dir = os.path.join(root_path, local_root)
+    tgt_dir = os.path.join(target_root, local_root)
+    tgt_dir = os.path.normpath(tgt_dir)
 
-def _set_package_tags(builder, label, target_dir, which_tags):
+    db_label_start = utils.label_part_join('checkout',label.name)
+
+    if DEBUG:
+        print '..copying %s, %s' % (src_dir, db_label_start)
+        print '       to %s, %s' % (tgt_dir, db_label_start)
+
+    db_src = db.Database(src_dir)
+    db_target = db.Database(tgt_dir)
+
+    db.copy_tags(db_src, db_target, db_label_start)
+
+
+def _set_package_tags(builder, label, target_root, which_tags):
     """Copy package tags.
 
     However, only copy package tags (a) for the particular role, and
@@ -856,25 +865,28 @@ def _set_package_tags(builder, label, target_dir, which_tags):
     root_path = normalise_dir(builder.db.root_path)
     local_root = find_local_relative_root(builder, label)
 
-    tags_dir = os.path.join('.muddle', 'tags', 'package', label.name)
-    src_tags_dir = os.path.join(root_path, local_root, tags_dir)
-    tgt_tags_dir = os.path.join(target_dir, local_root, tags_dir)
-    tgt_tags_dir = os.path.normpath(tgt_tags_dir)
-
-    if DEBUG:
-        print '..copying %s'%src_tags_dir
-        print '       to %s'%tgt_tags_dir
+    src_dir = os.path.join(root_path, local_root)
+    tgt_dir = os.path.join(target_root, local_root)
+    tgt_dir = os.path.normpath(tgt_dir)
 
     # We only want to copy tags for this particular role,
     # and only tags up to having built our obj/ hierarchy
-    if not os.path.exists(tgt_tags_dir):
-        os.makedirs(tgt_tags_dir)
-    for tag in which_tags:
-        tag_filename = '%s-%s'%(label.role, tag)
-        tag_file = os.path.join(src_tags_dir, tag_filename)
-        if os.path.exists(tag_file):
-            copy_file(tag_file, os.path.join(tgt_tags_dir, tag_filename),
-                      preserve=True)
+
+    def input_tag_to_db_label(itag):
+        tag_leaf = '%s-%s'%(label.role, itag)
+        return utils.label_part_join('package', label.name, tag_leaf)
+
+    tags = map(input_tag_to_db_label, which_tags)
+
+    db_src = db.Database(src_dir)
+    db_target = db.Database(tgt_dir)
+    db.copy_tags_with(db_src,db_target, tags)
+
+    if DEBUG:
+        print '..copying %s, package/%s/%s-*' % src_dir,label.name, label.role
+        print '       to %s, package/%s/%s-*'%tgt_dir,label.name, label.role
+
+
 
 def _actually_distribute_some_checkout_files(builder, label, target_dir, files):
     """As it says.

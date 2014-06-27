@@ -207,6 +207,11 @@ for key, value in DirTypeDict.items():
 
 DirType = __directory_type_type(**DirTypeDict)
 
+# Previously based on directory structure, now that a database is
+# being used consistency is required for separators across different systems.
+def label_part_join(*args):
+    return '/'.join(args)
+
 def string_cmp(a,b):
     """
     Return -1 if a < b, 0 if a == b,  +1 if a > b.

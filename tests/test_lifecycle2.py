@@ -546,7 +546,8 @@ def main(args):
             if not retcode:
                 raise GiveUp("Expected error trying to pull from wombat, but"
                              " got %d:\n%s"%(retcode, text))
-            if "fatal: remotes/wombat/v1-maintenance - not something we can merge" not in text:
+            if ("fatal: remotes/wombat/v1-maintenance - not something we can merge" not in text and
+                "merge: remotes/wombat/v1-maintenance - not something we can merge" not in text):
                 raise GiveUp("Expected error 'fatal: remotes/wombat/v1-maintenance"
                              " - not something we can merge' trying to pull from"
                              " wombat, but got:\n%s"%text)

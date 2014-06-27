@@ -30,7 +30,7 @@ except ImportError:
     sys.path.insert(0, get_parent_dir(__file__))
     import muddled.cmdline
 
-from muddled.utils import GiveUp, normalise_dir, LabelType, DirTypeDict
+from muddled.utils import GiveUp, normalise_dir, LabelType, DirTypeDict, label_part_join
 from muddled.withdir import Directory, NewDirectory, TransientDirectory
 from muddled.depend import Label, label_list_to_string
 
@@ -467,11 +467,11 @@ def check_checkout_files(d):
             if is_subdomain:
                 check_files([m.join('am_subdomain')])
 
-            with Directory(m.join('tags', 'checkout')) as c:
-                check_files([c.join('builds', 'checked_out'),
-                             c.join('first_co', 'checked_out'),
-                             c.join('main_co', 'checked_out'),
-                             c.join('second_co', 'checked_out')])
+        check_tags([label_part_join('checkout', 'builds', 'checked_out'),
+                    label_part_join('checkout', 'first_co', 'checked_out'),
+                    label_part_join('checkout', 'main_co', 'checked_out'),
+                    label_part_join('checkout', 'second_co', 'checked_out')],
+                   normalise_dir("."))
 
     def check_src_files(main_c_file='main0.c'):
         check_files([s.join('builds', '01.py'),
@@ -919,19 +919,18 @@ def build():
     muddle([])
 
 def check_files_after_build(d):
-    def check_built_tags(t, pkg):
-        check_files([t.join('package', pkg, 'x86-built'),
-                     t.join('package', pkg, 'x86-configured'),
-                     t.join('package', pkg, 'x86-installed'),
-                     t.join('package', pkg, 'x86-postinstalled'),
-                     t.join('package', pkg, 'x86-preconfig')])
+    def check_built_tags( pkg):
+        check_tags([label_part_join('package', pkg, 'x86-built'),
+                    label_part_join('package', pkg, 'x86-configured'),
+                    label_part_join('package', pkg, 'x86-installed'),
+                    label_part_join('package', pkg, 'x86-postinstalled'),
+                    label_part_join('package', pkg, 'x86-preconfig')])
 
     def check_built_and_deployed_tags(d):
-        with Directory(d.join('.muddle', 'tags')) as t:
-            check_built_tags(t, 'main_pkg')
-            check_built_tags(t, 'first_pkg')
-            check_built_tags(t, 'second_pkg')
-            check_files([t.join('deployment', 'everything', 'deployed')])
+        check_built_tags('main_pkg')
+        check_built_tags('first_pkg')
+        check_built_tags('second_pkg')
+        check_tags([label_part_join('deployment', 'everything', 'deployed')])
 
     def check_files_in(d, files):
         mapped = map(d.join, files)
@@ -964,15 +963,13 @@ def check_files_after_build(d):
     with Directory('install'):
         with Directory('x86') as x:
             check_files_in(x, ['first', 'second', 'main0'])
-    with Directory('.muddle'):
-        with Directory('tags') as t:
-            check_files([t.join('package', 'main_pkg', 'x86-built'),
-                         t.join('package', 'main_pkg', 'x86-configured'),
-                         t.join('package', 'main_pkg', 'x86-installed'),
-                         t.join('package', 'main_pkg', 'x86-postinstalled'),
-                         t.join('package', 'main_pkg', 'x86-preconfig'),
-                         t.join('deployment', 'everything', 'deployed'),
-                        ])
+    check_tags([label_part_join('package', 'main_pkg', 'x86-built'),
+                label_part_join('package', 'main_pkg', 'x86-configured'),
+                label_part_join('package', 'main_pkg', 'x86-installed'),
+                label_part_join('package', 'main_pkg', 'x86-postinstalled'),
+                label_part_join('package', 'main_pkg', 'x86-preconfig'),
+                label_part_join('deployment', 'everything', 'deployed'),],
+                normalise_dir("."))
 
     with Directory('domains'):
         with Directory('subdomain1') as s1:

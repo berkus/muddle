@@ -53,8 +53,9 @@ except ImportError:
     sys.path.insert(0,PARENT_DIR)
     import muddled.cmdline
 
-from muddled.utils import GiveUp, MuddleBug, ShellError
+from muddled.utils import GiveUp, MuddleBug, ShellError, normalise_dir
 from muddled.utils import shell, run1, run2, get_cmd_data
+from muddled import db
 
 export_names(['GiveUp', 'MuddleBug', 'ShellError'])
 export_names(['shell', 'run1', 'run2'])
@@ -253,6 +254,20 @@ def check_files(paths, verbose=True):
             raise GiveUp('File %s does not exist'%name)
     if verbose:
         flushing_print('++ All named files exist\n')
+
+@export
+def check_tags(tags,  domain=None, verbose=True):
+    """Given a list of tags, check they all exist.
+    """
+
+    root_path = normalise_dir(".")
+    db_root = db.Database(root_path)
+    for tag in tags:
+        if not db_root.is_tag_done(None, dom_tag=(domain, tag)):
+            if domain is None:
+                raise GiveUp ("Tag %s does not exist" % tag)
+            else:
+                raise GiveUp ("Tag %s in %s does not exist" % (tag, domain))
 
 @export
 def check_specific_files_in_this_dir(names, verbose=True):

@@ -9,6 +9,7 @@ import re
 import xml.dom
 import xml.dom.minidom
 import traceback
+import sqlite3
 
 import muddled.utils as utils
 import muddled.depend as depend
@@ -104,6 +105,52 @@ class CheckoutData(object):
 
         self.options[name] = value
 
+
+def db_path(root_path):
+    return os.path.join(root_path,".muddle","tag_db")
+
+def connect_db(root_path):
+
+    db_path_ = db_path(root_path)
+    (dir,name) = os.path.split(db_path_)
+    utils.ensure_dir(dir)
+    db_connection = sqlite3.connect(db_path_)
+
+    #database of tags,
+    cursor = db_connection.cursor()
+    cursor.execute("CREATE TABLE IF NOT EXISTS tags (label TEXT PRIMARY KEY ON CONFLICT FAIL, "
+                    "pid_curr_processor INTEGER DEFAULT (0), status INTEGER DEFAULT (0), "
+                    "timestamp TIMESTAMP DEFAULT (CURRENT_TIMESTAMP) );")
+    db_connection.commit()
+    return db_connection
+
+def copy_tags(db_src, db_target, tag_label):
+    src_con = connect_db(db_src.root_path)
+    target_con = connect_db(db_target.root_path)
+
+    src_con.execute("ATTACH ? AS target", (db_path(db_target.root_path),))
+    src_con.execute("INSERT OR REPLACE INTO target.tags SELECT * FROM tags WHERE label LIKE ?", (utils.label_part_join(tag_label,'%'),))
+    src_con.execute("DETACH target")
+    src_con.commit()
+    target_con.commit()
+    src_con.close()
+    target_con.close()
+
+    print "copying tags from %s to %s" % (db_src.root_path, db_target.root_path)
+
+def copy_tags_with(db_src, db_target, tags):
+
+    src_con = connect_db(db_src.root_path)
+    target_con = connect_db(db_target.root_path)
+
+    src_con.execute("ATTACH ? AS target", (db_path(db_target.root_path),))
+    for tag in tags:
+        src_con.execute("INSERT OR REPLACE INTO target.tags SELECT * FROM tags WHERE label=?", (tag,))
+    src_con.execute("DETACH target")
+    src_con.commit()
+    target_con.commit()
+    src_con.close()
+    target_con.close()
 
 class Database(object):
     """
@@ -242,6 +289,10 @@ class Database(object):
       Clearly, there is always at least one entry, with key None, for the
       top-level build description.
     """
+
+    CLEAR = 0
+    PROCESSING = 1
+    DONE = 2
 
     def __init__(self, root_path):
         """
@@ -1180,10 +1231,7 @@ class Database(object):
         To make life a bit easier, we group labels.
         """
 
-        if label.domain:
-            root = os.path.join(self.root_path, domain_subpath(label.domain))
-        else:
-            root = self.root_path
+        root = self.tag_root_dir(label)
 
         if (label.role is None):
             leaf = label.tag
@@ -1196,42 +1244,111 @@ class Database(object):
                             label.type,
                             label.name, leaf)
 
-    def is_tag(self, label):
+    def tag_root_dir(self, label):
+        if label.domain is not None:
+            return os.path.join(self.root_path, domain_subpath(label.domain))
+        else:
+            return self.root_path
+
+    def label_to_dom_tag(self, label):
+        return (label.domain, self.tag_db_label(label))
+
+    def domain_root_dir(self, domain):
+        return os.path.join(self.root_path, domain_subpath(domain))
+
+    def tag_db(self, label):
+        return os.path.join(self.tag_root_dir(label), '.muddle', 'tags_db')
+
+    def tag_db_label(self, label):
+        if (label.role is None):
+            leaf = label.tag
+        else:
+            leaf = "%s-%s"%(label.role, label.tag)
+        return utils.label_part_join(label.type,label.name, leaf)
+
+    def _is_tag_n(self,label,state, dom_tag=None):
+        if dom_tag is None:
+            tag = self.tag_db_label(label)
+            domain = label.domain
+        else:
+            (domain,tag) = dom_tag
+        with connect_db(self.domain_root_dir(domain)) as db_connection:
+            cursor = db_connection.cursor()
+
+            cursor.execute("SELECT * FROM tags WHERE label=? and status=?", (tag,state))
+            return cursor.fetchone() is not None
+
+    def is_tag_clear(self,label, dom_tag=None):
+        return not self.is_tag_done(label, dom_tag) and not self.is_tag_processing(label, dom_tag)
+
+    def is_tag_processing(self, label, dom_tag=None):
+        """
+        Is this label being processed?
+        """
+        return self._is_tag_n(label,Database.PROCESSING, dom_tag)
+
+    def is_tag_done(self, label, dom_tag=None):
         """
         Is this label asserted?
         """
-        if (label.transient):
-            return (label in self.local_tags)
+        if dom_tag is not None or not label.transient:
+            return self._is_tag_n(label,Database.DONE, dom_tag)
         else:
-            return (os.path.exists(self.tag_file_name(label)))
+            return label in self.local_tags
 
-    def set_tag(self, label):
+    def set_tag_processing(self, label):
+        """
+        Attempt to get permission to start processing the label, returns permission granted or not.
+        Assumes that tag has not been set as done.
+        """
+
+        if label.transient:
+            if self.is_tag_done(label):
+                return False
+            else:
+                return True
+
+        tag_file = self.tag_db_label(label)
+        pid = os.getpid()
+
+        with connect_db(self.tag_root_dir(label)) as db_connection:
+            db_connection.execute("INSERT OR IGNORE INTO tags (label, status, pid_curr_processor) VALUES (?, ?, ?)",
+                                       (tag_file,Database.PROCESSING, pid))
+            db_connection.commit()
+            cursor = db_connection.execute("SELECT * FROM tags WHERE label=?", (tag_file,))
+            result = cursor.fetchone()
+            return result is not None and result[1]==pid and result[2]==Database.PROCESSING
+
+    def set_tag_done(self, label):
         """
         Assert this label.
         """
 
-
-        #print "Assert tag %s transient? %s"%(label, label.transient)
-
         if (label.transient):
             self.local_tags.add(label)
         else:
-            file_name = self.tag_file_name(label)
-            (dir,name) = os.path.split(file_name)
-            utils.ensure_dir(dir)
-            f = open(file_name, "w+")
-            f.write(utils.iso_time())
-            f.write("\n")
-            f.close()
+            with connect_db(self.tag_root_dir(label)) as db_connection:
+                db_connection.execute("INSERT OR REPLACE INTO tags (label, status) VALUES (?, ?)",
+                                           (self.tag_db_label(label),Database.DONE))
+                db_connection.commit()
 
     def clear_tag(self, label):
         if (label.transient):
             self.local_tags.discard(label)
         else:
-            try:
-                os.remove(self.tag_file_name(label))
-            except:
-                pass
+            with connect_db(self.domain_root_dir(label.domain)) as db_connection:
+                db_connection.execute("DELETE FROM tags WHERE label=?", (self.tag_db_label(label),))
+                db_connection.commit()
+
+    def clear_tags_in(self, directory, domain=None):
+        if domain is not None:
+            path = os.path.join(self.root_path, domain)
+        else:
+            path = self.root_path
+        with connect_db(path) as db_connection:
+
+            db_connection.execute("DELETE FROM tags WHERE label LIKE ?", (utils.label_part_join(directory,'%'),))
+            db_connection.commit()
 
     def commit(self):
         """

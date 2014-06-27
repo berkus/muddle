@@ -28,7 +28,7 @@ except ImportError:
     sys.path.insert(0, get_parent_dir(__file__))
     import muddled.cmdline
 
-from muddled.utils import GiveUp, normalise_dir, LabelType, LabelTag, DirTypeDict
+from muddled.utils import GiveUp, normalise_dir, LabelType, LabelTag, DirTypeDict, label_part_join
 from muddled.withdir import Directory, NewDirectory, TransientDirectory
 from muddled.depend import Label, label_list_to_string
 from muddled.version_stamp import VersionStamp
@@ -378,11 +378,10 @@ def check_checkout_files(d):
             if is_subdomain:
                 check_files([m.join('am_subdomain')])
 
-            with Directory(m.join('tags', 'checkout')) as c:
-                check_files([c.join('builds', 'checked_out'),
-                             c.join('first_co', 'checked_out'),
-                             c.join('main_co', 'checked_out'),
-                             c.join('second_co', 'checked_out')])
+        check_tags([label_part_join('checkout', 'builds', 'checked_out'),
+                    label_part_join('checkout', 'first_co', 'checked_out'),
+                    label_part_join('checkout', 'main_co', 'checked_out'),
+                    label_part_join('checkout', 'second_co', 'checked_out')])
 
     def check_src_files(main_c_file='main0.c'):
         check_files([s.join('builds', '01.py'),

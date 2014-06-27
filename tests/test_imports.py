@@ -22,7 +22,6 @@ import muddled.pkg
 import muddled.rewrite
 import muddled.rrw
 import muddled.subst
-import muddled.test
 import muddled.utils
 import muddled.version_control
 import muddled.xmlconfig

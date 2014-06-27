@@ -1740,7 +1740,7 @@ class Bootstrap(Command):
 
         print 'Telling muddle the build description is checked out'
         build_desc_label = Label.from_string('checkout:builds/checked_out')
-        db.set_tag(build_desc_label)
+        db.set_tag_done(build_desc_label)
 
         # Now let's actually load the build description
         print 'Loading it'
@@ -6234,7 +6234,7 @@ class Status(CheckoutCommand):
 
         something = []
         for co in labels:
-            if not builder.db.is_tag(co):
+            if not builder.db.is_tag_done(co):
                 print
                 print '%s is not checked out'%co
                 something.append(co)
@@ -6424,7 +6424,7 @@ class Import(CheckoutCommand):
 
     def build_these_labels(self, builder, labels):
         for c in labels:
-            builder.db.set_tag(c)
+            builder.db.set_tag_done(c)
         # issue 143: Call reparent so the VCS is locked and loaded.
         rep = Reparent()
         rep.set_options(self.options)
@@ -6804,7 +6804,7 @@ class Assert(AnyLabelCommand):
 
     def build_these_labels(self, builder, labels):
         for l in labels:
-            builder.db.set_tag(l)
+            builder.db.set_tag_done(l)
 
 @command('retract', CAT_ANYLABEL)
 class Retract(AnyLabelCommand):
@@ -7230,7 +7230,7 @@ class VeryClean(Command):
                     delete_directory(directory)
 
                 for directory in ('package', 'deployment'):
-                    delete_directory(os.path.join('.muddle', 'tags', directory))
+                    builder.db.clear_tags_in(directory)
 
                 if os.path.exists('domains'):
                     subdomains = os.listdir('domains')

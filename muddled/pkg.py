@@ -57,7 +57,7 @@ class VcsCheckoutBuilder(Action):
         Return True if this checkout has indeed been checked out
         """
         co_label = co_label.copy_with_tag(utils.LabelTag.CheckedOut, transient=False)
-        return builder.db.is_tag(co_label)
+        return builder.db.is_tag_done(co_label)
 
     def must_pull_before_commit(self, builder, co_label):
         """

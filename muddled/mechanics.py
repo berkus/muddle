@@ -6,6 +6,9 @@ import os
 import re
 import sys
 import traceback
+import multiprocessing
+import multiprocessing.pool
+import time
 
 import muddled.db as db
 import muddled.depend as depend
@@ -30,6 +33,9 @@ class ErrorInBuildDescription(GiveUp):
 
 build_name_re = re.compile(r"[A-Za-z0-9_-]+")
 
+
+#process_pool = multiprocessing.pool.ThreadPool()
+
 def check_build_name(name):
     """Check a build name for legality.
 
@@ -39,7 +45,6 @@ def check_build_name(name):
     if m is None or m.end() != len(name):
         raise GiveUp("Build name '%s' is not allowed (it may only contain"
                      " 'A'-'Z', 'a'-'z', '0'-'9', '_' or '-')"%name)
-
 
 class Builder(object):
     """
@@ -718,32 +723,7 @@ class Builder(object):
         The fundamental operation of a builder - build this label.
         """
 
-        rule_list = depend.needed_to_build(self.ruleset, label,
-                                           useTags=True, useMatch=True)
-
-        if not rule_list:
-            print "There is no rule to build label %s"%label
-            return
-
-        for r in rule_list:
-            if self.db.is_tag(r.target):
-                # Don't build stuff that's already built ..
-                pass
-            else:
-                if not silent:
-                    print "> Building %s"%(r.target)
-
-                # Set up the environment for building this label
-                old_env = os.environ.copy()
-                try:
-                    self._build_label_env(r.target, env_store)
-
-                    if r.action:
-                        r.action.build_label(self, r.target)
-                finally:
-                    os.environ = old_env
-
-                self.db.set_tag(r.target)
+        self.build_label_with_options(label, useDepends=True, useTags=True, silent=silent)
 
     def build_label_with_options(self, label, useDepends = True, useTags = True, silent = False):
         """
@@ -765,22 +745,38 @@ class Builder(object):
 
         for r in rule_list:
             # Build it.
-            if (not self.db.is_tag(r.target)):
-                # Don't build stuff that's already built ..
-                if (not silent):
-                    print "> Building %s"%(r.target)
+            if not self.db.is_tag_done(r.target):
+                if self.db.set_tag_processing(r.target):
+                    if (not silent):
+                        print "> Building %s" % r.target
+                    apply(self._build_target,(r,os.environ.copy(),silent))
+                else:
+                    pass
+                    raise GiveUp("Single threaded and some tag already in progress. Label of %s, rule target of %s."
+                                 % (str(self.db.label_to_dom_tag(label)),str(self.db.label_to_dom_tag(r.target))))
 
-                # Set up the environment for building this label
-                old_env = os.environ.copy()
-                try:
-                    self._build_label_env(r.target, env_store)
+        built = False
+        while not built:
+            built = True
+            for r in rule_list:
+                if not self.db.is_tag_done(r.target):
+                    built = False
+                    raise GiveUp("Single threaded and some dependencies not built. Label of %s, rule target of %s."
+                                 % (str(self.db.label_to_dom_tag(label)),str(self.db.label_to_dom_tag(r.target))))
 
-                    if r.action:
-                        r.action.build_label(self, r.target)
-                finally:
-                    os.environ = old_env
+            time.sleep(0.05)
 
-                self.db.set_tag(r.target)
+    def _build_target(self, r, old_env,silent):
+        # Set up the environment for building this label
+        try:
+            self._build_label_env(r.target, env_store)
+
+            if r.action:
+                r.action.build_label(self, r.target)
+        finally:
+            os.environ = old_env
+
+        self.db.set_tag_done(r.target)
 
     @property
     def build_name(self):
