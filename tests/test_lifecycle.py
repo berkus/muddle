@@ -406,6 +406,7 @@ def test_init_with_branch(root_d):
                 text = captured_muddle(['pull', 'co.fred'], error_fails=False).strip()
                 if not text.endswith('checkout past the specified revision.'):
                     raise GiveUp('Expected muddle pull to fail trying to go "past" revision:\n%s'%text)
+                    print text
             with Directory('co.branch1.fred'):
                 # Revision 'fred' and branch 'branch1' - the revision wins
                 # -- fred

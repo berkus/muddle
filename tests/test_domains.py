@@ -968,8 +968,8 @@ def check_files_after_build(d):
                 label_part_join('package', 'main_pkg', 'x86-installed'),
                 label_part_join('package', 'main_pkg', 'x86-postinstalled'),
                 label_part_join('package', 'main_pkg', 'x86-preconfig'),
-                label_part_join('deployment', 'everything', 'deployed'),],
-                normalise_dir("."))
+                label_part_join('deployment', 'everything', 'deployed')],
+               normalise_dir("."))
 
     with Directory('domains'):
         with Directory('subdomain1') as s1:

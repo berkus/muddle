@@ -12,6 +12,7 @@ into deployment directories, usually to be processed by some external tool.
 """
 
 import os
+import time
 
 import muddled.depend as depend
 import muddled.utils as utils
@@ -258,12 +259,24 @@ class CollectDeploymentBuilder(Action):
                                   utils.LabelTag.InstructionsApplied,
                                   domain = label.domain)
 
-        cmd = [builder.muddle_binary, "buildlabel", str(permissions_label)]
+        # cmd = [builder.muddle_binary, "buildlabel", str(permissions_label)]
+        cmd = ["_sub_build_ignore_dep", str(permissions_label)]
         if need_root_for:
             print "I need root to do %s - sorry! - running sudo .."%(', '.join(sorted(need_root_for)))
-            utils.run0(["sudo"] + cmd)
+            # The following works on the assumption that multiple muddles run using a single terminal
+            # for output and (more significantly in this case) input. If muddle changes to only have
+            # manually started helper processes in different threads then the pause mechanism should
+            # be removed.
+            if not builder.db.is_master():
+                raise MuddleBug("Attempted CollectDeploymentBuilder action requiring root "
+                                "without being the main muddle instance")
+            utils.run_sync_muddle(cmd, builder, input_by_stdin=False, root=True)
         else:
-            utils.run0(cmd)
+            utils.run_sync_muddle(cmd,builder,input_by_stdin=False,root=False)
+
+    def requires_master(self):
+        # subprocess requires user input to enter the password for sudo typically
+        return True
 
     def apply_instructions(self, builder, label, prepare, deploy_path):
 

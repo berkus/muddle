@@ -11,6 +11,7 @@ for help on how to use it.
 import errno
 import os
 import subprocess
+import traceback
 
 import muddled.commands as commands
 import muddled.utils as utils
@@ -89,6 +90,7 @@ def find_and_load(specified_root, muddle_binary):
         raise
     except utils.GiveUp:
         print "Failure trying to load build tree"
+        print traceback.format_exc()
         raise
 
 def lookup_command(command_name, args, cmd_dict, subcmd_dict):

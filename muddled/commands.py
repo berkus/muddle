@@ -31,6 +31,8 @@ import time
 import urllib
 import xml.dom.minidom
 from urlparse import urlparse
+import cPickle
+import logging
 
 import muddled.depend as depend
 import muddled.env_store as env_store
@@ -57,6 +59,8 @@ from muddled.distribute import distribute, the_distributions, \
         get_distribution_names, get_used_distribution_names
 from muddled.withdir import Directory, NewDirectory
 
+logger = logging.getLogger("muddled.commands")
+
 # Following Richard's naming conventions...
 # A dictionary of <command name> : <command class>
 # If a command has aliases, then they will also be entered as keys
@@ -82,8 +86,9 @@ CAT_ANYLABEL='any label'
 CAT_QUERY='query'
 CAT_EXPORT='export'
 CAT_MISC='misc'
+CAT_INTERNAL='internal'
 g_command_categories_in_order = [CAT_INIT, CAT_CHECKOUT, CAT_PACKAGE,
-        CAT_DEPLOYMENT, CAT_ANYLABEL, CAT_QUERY, CAT_EXPORT, CAT_MISC]
+        CAT_DEPLOYMENT, CAT_ANYLABEL, CAT_QUERY, CAT_EXPORT, CAT_MISC, CAT_INTERNAL]
 
 def in_category(command_name, category):
     if category not in g_command_categories_in_order:
@@ -177,7 +182,7 @@ class Command(object):
     # Our switches are held as a dictionary whose keys are the allowed
     # switches, and whose values are the token to put into self.switches
     # if we encounter that switch
-    allowed_switches = {}
+    allowed_switches = {'-debug':'debug', '-info':'info'}
 
     # A list of the switches we were given, held as the first element
     # from one of the 'allowed_switches' tuples
@@ -245,6 +250,11 @@ class Command(object):
             else:
                 break
             args = args[1:]
+
+        if 'debug' in self.switches:
+            logging.getLogger().setLevel(logging.DEBUG)
+        elif 'info' in self.switches:
+            logging.getLogger().setLevel(logging.INFO)
 
         if args and not allowed_more:
             raise GiveUp('Unexpected trailing arguments "%s"'%' '.join(args))
@@ -838,17 +848,16 @@ def kill_labels(builder, to_kill):
     except GiveUp, e:
         raise GiveUp("Can't kill %s - %s"%(str(lbl), e))
 
-def build_labels(builder, to_build):
-    if len(to_build) == 1:
-        print "Building %s"%to_build[0]
-    else:
-        print "Building %d labels"%len(to_build)
-
-    try:
-        for lbl in to_build:
-            builder.build_label(lbl)
-    except GiveUp,e:
-        raise GiveUp("Can't build %s - %s"%(str(lbl), e))
+# def builder.build_labels(to_build, master=True):
+#     if len(to_build) == 1:
+#         print "Building %s"%to_build[0]
+#     else:
+#         print "Building %d labels"%len(to_build)
+#
+#     try:
+#         builder.build_labels(to_build, master=True)
+#     except GiveUp,e:
+#         raise GiveUp("Can't build %s - %s"%(str(to_build), e))
 
 # =============================================================================
 # Actual commands
@@ -1291,6 +1300,7 @@ the parentheses. So, for instance, use:
         """
         # Use the entire set of command names, including any aliases
         keys = g_command_dict.keys()
+        keys = [key for key in keys if key not in g_command_categories[CAT_INTERNAL]]
         keys.sort()
         keys_text = ", ".join(keys)
 
@@ -1313,6 +1323,7 @@ the parentheses. So, for instance, use:
 
         categories_dict = g_command_categories
         categories_list = g_command_categories_in_order
+        categories_list.remove(CAT_INTERNAL)
 
         maxlen = len(max(categories_list, key=len)) +1  # +1 for a colon
         indent = ' '*(maxlen+3)
@@ -1740,7 +1751,7 @@ class Bootstrap(Command):
 
         print 'Telling muddle the build description is checked out'
         build_desc_label = Label.from_string('checkout:builds/checked_out')
-        db.set_tag_done(build_desc_label)
+        db.set_tag(build_desc_label)
 
         # Now let's actually load the build description
         print 'Loading it'
@@ -4709,10 +4720,8 @@ class UnStamp(Command):
                 print "Unstamping checkout %s"%label.name
                 checkout_from_repo(builder, label, repo, co_dir, co_leaf)
 
-
-            # Then need to mimic "muddle checkout" for it
-            new_label = label.copy_with_tag(LabelTag.CheckedOut)
-            builder.build_label(new_label, silent=False)
+        target_labels = {label.copy_with_tag(LabelTag.CheckedOut) for label in co_labels}
+        builder.build_labels(target_labels, master=True)
 
     def update_from_stamp(self, builder, domains, checkouts):
         """
@@ -5395,7 +5404,7 @@ class Redeploy(DeploymentCommand):
 
     def build_these_labels(self, builder, labels):
         build_a_kill_b(builder, labels, LabelTag.Clean, LabelTag.Deployed)
-        build_labels(builder, labels)
+        builder.build_labels(labels, master=True)
 
 @command('cleandeploy', CAT_DEPLOYMENT)
 class Cleandeploy(DeploymentCommand):
@@ -5438,7 +5447,7 @@ class Deploy(DeploymentCommand):
     """
 
     def build_these_labels(self, builder, labels):
-        build_labels(builder, labels)
+        builder.build_labels(labels, master=True)
 
 # -----------------------------------------------------------------------------
 # Package commands
@@ -5471,7 +5480,7 @@ class Configure(PackageCommand):
     required_tag = LabelTag.Configured
 
     def build_these_labels(self, builder, labels):
-        build_labels(builder, labels)
+        builder.build_labels(labels, master=True)
 
 @command('reconfigure', CAT_PACKAGE)
 class Reconfigure(PackageCommand):
@@ -5501,7 +5510,7 @@ class Reconfigure(PackageCommand):
         # OK. Now we have our labels, retag them, and kill them and their
         # consequents
         kill_labels(builder, labels)
-        build_labels(builder, labels)
+        builder.build_labels(labels, master=True)
 
 @command('build', CAT_PACKAGE)
 class Build(PackageCommand):
@@ -5542,7 +5551,7 @@ class Build(PackageCommand):
     """
 
     def build_these_labels(self, builder, labels):
-        build_labels(builder, labels)
+        builder.build_labels(labels, master=True)
 
 @command('rebuild', CAT_PACKAGE)
 class Rebuild(PackageCommand):
@@ -5572,7 +5581,7 @@ class Rebuild(PackageCommand):
         # consequents
         to_kill = depend.retag_label_list(labels, LabelTag.Built)
         kill_labels(builder, to_kill)
-        build_labels(builder, labels)
+        builder.build_labels(labels, master=True)
 
 @command('reinstall', CAT_PACKAGE)
 class Reinstall(PackageCommand):
@@ -5601,7 +5610,7 @@ class Reinstall(PackageCommand):
         # consequents
         to_kill = depend.retag_label_list(labels, LabelTag.Installed)
         kill_labels(builder, to_kill)
-        build_labels(builder, labels)
+        builder.build_labels(labels, master=True)
 
 @command('distrebuild', CAT_PACKAGE)
 class Distrebuild(PackageCommand):
@@ -5624,7 +5633,7 @@ class Distrebuild(PackageCommand):
 
     def build_these_labels(self, builder, labels):
         build_a_kill_b(builder, labels, LabelTag.DistClean, LabelTag.PreConfig)
-        build_labels(builder, labels)
+        builder.build_labels(labels, master=True)
 
 @command('clean', CAT_PACKAGE)
 class Clean(PackageCommand):
@@ -5762,7 +5771,7 @@ class Commit(CheckoutCommand):
         # Forcibly retract all the updated tags.
         for co in labels:
             builder.kill_label(co)
-            builder.build_label(co)
+            builder.build_label(co, master=True)
 
 @command('push', CAT_CHECKOUT)
 class Push(CheckoutCommand):
@@ -6064,7 +6073,7 @@ class Pull(CheckoutCommand):
             # First clear the 'pulled' tag
             builder.db.clear_tag(co_label)
             # And then build it again
-            builder.build_label(co_label)
+            builder.build_label(co_label, master=False)
         except Unsupported as e:
             print e
             self.not_needed.append(e)
@@ -6424,7 +6433,7 @@ class Import(CheckoutCommand):
 
     def build_these_labels(self, builder, labels):
         for c in labels:
-            builder.db.set_tag_done(c)
+            builder.db.set_tag(c)
         # issue 143: Call reparent so the VCS is locked and loaded.
         rep = Reparent()
         rep.set_options(self.options)
@@ -6463,8 +6472,7 @@ class Checkout(CheckoutCommand):
 
     def build_these_labels(self, builder, labels):
         builder.db.just_pulled.clear()
-        for co in labels:
-            builder.build_label(co)
+        builder.build_labels(labels, master=True)
 
 @command('sync', CAT_CHECKOUT)
 class Sync(CheckoutCommand):
@@ -6774,7 +6782,7 @@ class BuildLabel(AnyLabelCommand):
     """
 
     def build_these_labels(self, builder, labels):
-        build_labels(builder, labels)
+        builder.build_labels(labels, master=True)
 
 @command('assert', CAT_ANYLABEL)
 class Assert(AnyLabelCommand):
@@ -6804,7 +6812,7 @@ class Assert(AnyLabelCommand):
 
     def build_these_labels(self, builder, labels):
         for l in labels:
-            builder.db.set_tag_done(l)
+            builder.db.set_tag(l)
 
 @command('retract', CAT_ANYLABEL)
 class Retract(AnyLabelCommand):
@@ -6867,8 +6875,7 @@ class Retry(AnyLabelCommand):
             builder.db.clear_tag(l)
 
         print "Build: %s"%(label_list_to_string(labels))
-        for l in labels:
-            builder.build_label(l)
+        builder.build_labels(labels, master=True)
 
 # -----------------------------------------------------------------------------
 # Misc commands
@@ -7229,8 +7236,8 @@ class VeryClean(Command):
                 for directory in ('obj', 'install', 'deploy'):
                     delete_directory(directory)
 
-                for directory in ('package', 'deployment'):
-                    builder.db.clear_tags_in(directory)
+                for type in ('package', 'deployment'):
+                    builder.db.clear_tags_type(type)
 
                 if os.path.exists('domains'):
                     subdomains = os.listdir('domains')
@@ -7734,5 +7741,55 @@ class Subst(Command):
                 raise GiveUp("%s\nWhilst processing %s with XML file %s"%(e, src, xml_file))
             else:
                 raise GiveUp("%s\nWhilst processing %s"%(e, src))
+
+
+@command('_sub_builder_db', CAT_INTERNAL)
+class SubprocessBuilderDb(Command):
+
+    def with_build_tree(self, builder, current_dir, args):
+        logger.info("sub started")
+        builder.db.register_process()
+        try:
+            builder.build_labels_from_db(False)
+        finally:
+            builder.db.deregister_process()
+        logger.info("sub finished")
+
+    def requires_build_tree(self):
+        return True
+
+
+@command('_sub_build_ignore_dep', CAT_INTERNAL)
+class SubprocessBuildSingle(AnyLabelCommand):
+
+    # Works on the assumption that the parent process has already made sure that the
+    # rule has status processing and that the dependencies have already been fulfilled.
+
+    # Works through the list sequentially which may be useful to fulfill dependencies of later rules
+    def build_these_labels(self, builder, labels):
+        for label in labels:
+
+            rule = builder.db.get_rule_for_label(label)
+
+            # InstructionApplied tags aren't referenced normally in the dependency graph so the rule will not be
+            # added currently. As InstructionApplied tags are the main use of this command this is compensated for.
+            if not rule:
+                rule = builder.ruleset.rule_for_target(label)
+                db_missing_rule = True
+                if not label.tag == utils.LabelTag.InstructionsApplied:
+                    logger.warning("Rule for %s missing from the database, occurs when it is applied "
+                                   "in a subprocess without being referenced as a dependency "
+                                   "from the initial label set." % label)
+            else:
+                db_missing_rule = False
+
+            builder._build_target(rule, False)
+
+            if not db_missing_rule:
+                builder.db.set_rule_done(rule)
+            else:
+                # set_rule_done assumes that the rule is entered normally in the databse
+                builder.db.set_tag(label)
+
 
 # End file.

@@ -259,11 +259,14 @@ def check_files(paths, verbose=True):
 def check_tags(tags,  domain=None, verbose=True):
     """Given a list of tags, check they all exist.
     """
-
     root_path = normalise_dir(".")
     db_root = db.Database(root_path)
+    if domain:
+        domain = os.path.relpath(domain, root_path)
+        domain = muddled.utils.domain_rel_path_to_parenth(domain)
+        print "domain string: %s" % domain
     for tag in tags:
-        if not db_root.is_tag_done(None, dom_tag=(domain, tag)):
+        if not db_root.is_tag_done(tag.copy_with_domain(domain)):
             if domain is None:
                 raise GiveUp ("Tag %s does not exist" % tag)
             else:

@@ -471,9 +471,8 @@ def main(args):
                                            'deploy',
                                            'versions',
                                            '.muddle/instructions',
-                                           '.muddle/tags/package',
-                                           '.muddle/tags/deployment',
-                                          ])
+                                           'domains/*/.muddle/tag_db',
+                                          ])# TODO: properly assert which tags are expected
 
             # Issue 250
             banner('TESTING DISTRIBUTE SOURCE RELEASE when in a subdirectory')
@@ -489,9 +488,8 @@ def main(args):
                                                'deploy',
                                                'versions',
                                                '.muddle/instructions',
-                                               '.muddle/tags/package',
-                                               '.muddle/tags/deployment',
-                                              ])
+                                               'domains/*/.muddle/tag_db',
+                                              ])# TODO: properly assert which tags are expected
 
             banner('TESTING DISTRIBUTE SOURCE RELEASE WITH VCS')
             target_dir = os.path.join(root_dir, 'source-with-vcs')
@@ -505,9 +503,8 @@ def main(args):
                                            'deploy',
                                            'versions',
                                            '.muddle/instructions',
-                                           '.muddle/tags/package',
-                                           '.muddle/tags/deployment',
-                                          ])
+                                           'domains/*/.muddle/tag_db',
+                                          ])# TODO: properly assert which tags are expected
 
             banner('TESTING DISTRIBUTE SOURCE RELEASE WITH VERSIONS')
             target_dir = os.path.join(root_dir, 'source-with-versions')
@@ -520,9 +517,8 @@ def main(args):
                                            'install',
                                            'deploy',
                                            '.muddle/instructions',
-                                           '.muddle/tags/package',
-                                           '.muddle/tags/deployment',
-                                          ])
+                                           'domains/*/.muddle/tag_db',
+                                          ])# TODO: properly assert which tags are expected
 
             banner('TESTING DISTRIBUTE SOURCE RELEASE WITH VCS AND VERSIONS')
             target_dir = os.path.join(root_dir, 'source-with-vcs-and-versions')
@@ -535,9 +531,8 @@ def main(args):
                                            'install',
                                            'deploy',
                                            '.muddle/instructions',
-                                           '.muddle/tags/package',
-                                           '.muddle/tags/deployment',
-                                          ])
+                                           'domains/*/.muddle/tag_db',
+                                          ])# TODO: properly assert which tags are expected
 
             banner('TESTING DISTRIBUTE SOURCE RELEASE WITH "-no-muddle-makefile"')
             # Hint: it shouldn't make any difference at all
@@ -552,9 +547,8 @@ def main(args):
                                            'deploy',
                                            'versions',
                                            '.muddle/instructions',
-                                           '.muddle/tags/package',
-                                           '.muddle/tags/deployment',
-                                          ])
+                                           'domains/*/.muddle/tag_db',
+                                          ])# TODO: properly assert which tags are expected
 
             banner('TESTING DISTRIBUTE BINARY RELEASE')
             target_dir = os.path.join(root_dir, 'binary')
@@ -569,8 +563,8 @@ def main(args):
                                            'versions',
                                            '.muddle/instructions/second_pkg/arm.xml',
                                            '.muddle/instructions/second_pkg/fred.xml',
-                                           '.muddle/tags/deployment',
-                                          ])
+                                           'domains/*/.muddle/tag_db',
+                                          ])# TODO: properly assert which tags are expected
 
             banner('TESTING DISTRIBUTE BINARY RELEASE WITHOUT MUDDLE MAKEFILE')
             target_dir = os.path.join(root_dir, 'binary-no-muddle-makefile')
@@ -585,8 +579,8 @@ def main(args):
                                            'versions',
                                            '.muddle/instructions/second_pkg/arm.xml',
                                            '.muddle/instructions/second_pkg/fred.xml',
-                                           '.muddle/tags/deployment',
-                                          ])
+                                           'domains/*/.muddle/tag_db',
+                                          ])# TODO: properly assert which tags are expected
 
             banner('TESTING DISTRIBUTE BINARY RELEASE WITH VERSIONS')
             target_dir = os.path.join(root_dir, 'binary-with-versions')
@@ -600,8 +594,8 @@ def main(args):
                                            'deploy',
                                            '.muddle/instructions/second_pkg/arm.xml',
                                            '.muddle/instructions/second_pkg/fred.xml',
-                                           '.muddle/tags/deployment',
-                                          ])
+                                           'domains/*/.muddle/tag_db',
+                                          ])# TODO: properly assert which tags are expected
 
             banner('TESTING DISTRIBUTE BINARY RELEASE WITH VERSIONS AND VCS')
             target_dir = os.path.join(root_dir, 'binary-with-versions-and-vcs')
@@ -616,8 +610,8 @@ def main(args):
                                            'deploy',
                                            '.muddle/instructions/second_pkg/arm.xml',
                                            '.muddle/instructions/second_pkg/fred.xml',
-                                           '.muddle/tags/deployment',
-                                          ])
+                                           'domains/*/.muddle/tag_db',
+                                          ])# TODO: properly assert which tags are expected
 
             banner('TESTING DISTRIBUTE "mixed"')
             target_dir = os.path.join(root_dir, 'mixed')
@@ -642,23 +636,14 @@ def main(args):
                                            # -- Deployments
                                            'deploy',
                                            # -- Tags
-                                           # We explicitly want tags for first_co
-                                           # We implicitly want tags for second_co,
-                                           # because we have package first_pkg which
-                                           # depends on it
-                                           '.muddle/tags/checkout/main_co',
-                                           '.muddle/tags/package/main_pkg',
-                                           '.muddle/tags/package/first_pkg',
-                                           '.muddle/tags/deployment',
-                                           # but we're not transferring install/,
-                                           # so we don't want [post]installed tags
-                                           '.muddle/tags/package/second_pkg/*-*installed',
+                                           'domains/*/.muddle/tag_db'
+                                           # Tags are handled crudely currently
                                            # -- etc
                                            '.muddle/instructions/first_pkg',
                                            '.muddle/instructions/second_pkg/arm.xml',
                                            '.muddle/instructions/second_pkg/fred.xml',
                                            'versions',
-                                          ])
+                                          ])# TODO: properly assert which tags are expected
 
             banner('TESTING DISTRIBUTE "mixed" WITH "-no-muddle-makefile"')
             # Again, shouldn't make any difference
@@ -684,23 +669,14 @@ def main(args):
                                            # -- Deployments
                                            'deploy',
                                            # -- Tags
-                                           # We explicitly want tags for first_co
-                                           # We implicitly want tags for second_co,
-                                           # because we have package first_pkg which
-                                           # depends on it
-                                           '.muddle/tags/checkout/main_co',
-                                           '.muddle/tags/package/main_pkg',
-                                           '.muddle/tags/package/first_pkg',
-                                           '.muddle/tags/deployment',
-                                           # but we're not transferring install/,
-                                           # so we don't want [post]installed tags
-                                           '.muddle/tags/package/second_pkg/*-*installed',
+                                           'domains/*/.muddle/tag_db',
+                                           # Tags are handled crudely currently
                                            # -- etc
                                            '.muddle/instructions/first_pkg',
                                            '.muddle/instructions/second_pkg/arm.xml',
                                            '.muddle/instructions/second_pkg/fred.xml',
                                            'versions',
-                                          ])
+                                          ])# TODO: properly assert which tags are expected
 
             banner('TESTING DISTRIBUTE "role-x86"')
             target_dir = os.path.join(root_dir, 'role-x86')
@@ -716,10 +692,10 @@ def main(args):
                                            '.muddle/instructions/second_pkg/arm.xml',
                                            '.muddle/instructions/second_pkg/fred.xml',
                                            # We only want role x86, not role arm
-                                           '.muddle/tags/package/main_pkg/arm-*',
+                                           'domains/*/.muddle/tag_db',
                                            'obj/main_pkg/arm',
                                            'install/arm',
-                                          ])
+                                          ])# TODO: properly assert which tags are expected
 
             banner('TESTING DISTRIBUTE "vertical"')
             target_dir = os.path.join(root_dir, 'vertical')
@@ -746,18 +722,13 @@ def main(args):
                                            # -- Deployments
                                            'deploy',
                                            # -- Tags
-                                           # We want tags for second_co and second_pkg
-                                           '.muddle/tags/checkout/main_co',
-                                           '.muddle/tags/checkout/first_co',
-                                           '.muddle/tags/package/main_pkg',
-                                           '.muddle/tags/package/first_pkg',
-                                           '.muddle/tags/deployment',
+                                           'domains/*/.muddle/tag_db',
                                            # -- etc
                                            '.muddle/instructions/first_pkg',
                                            '.muddle/instructions/second_pkg/arm.xml',
                                            '.muddle/instructions/second_pkg/fred.xml',
                                            'versions',
-                                         ])
+                                         ])# TODO: properly assert which tags are expected
 
             banner('TESTING DISTRIBUTE "vertical" WITH VCS AND VERSIONS')
             target_dir = os.path.join(root_dir, 'vertical-with-vcs-and-versions')
@@ -790,16 +761,12 @@ def main(args):
                                            'deploy',
                                            # -- Tags
                                            # We want tags for second_co and second_pkg
-                                           '.muddle/tags/checkout/main_co',
-                                           '.muddle/tags/checkout/first_co',
-                                           '.muddle/tags/package/main_pkg',
-                                           '.muddle/tags/package/first_pkg',
-                                           '.muddle/tags/deployment',
+                                           'domains/*/.muddle/tag_db',
                                            # -- etc
                                            '.muddle/instructions/first_pkg',
                                            '.muddle/instructions/second_pkg/arm.xml',
                                            '.muddle/instructions/second_pkg/fred.xml',
-                                         ])
+                                         ])# TODO: properly assert which tags are expected
 
 
 

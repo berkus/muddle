@@ -5,6 +5,7 @@ appropriate instructions.
 """
 
 import os
+import time
 
 import muddled.env_store
 import muddled.depend as depend
@@ -168,11 +169,20 @@ class FileDeploymentBuilder(Action):
 
         if need_root_for:
             print "I need root to do %s - sorry! - running sudo .."%(', '.join(sorted(need_root_for)))
-            utils.run0("sudo %s buildlabel '%s'"%(builder.muddle_binary,
-                                                  permissions_label))
+            # The following works on the assumption that multiple muddles run using a single terminal
+            # for output and (more significantly in this case) input. If muddle changes to only have
+            # manually started helper processes in different threads then the pause mechanism should
+            # be removed.
+            if not builder.db.is_master():
+                raise utils.MuddleBug("Attempted CollectDeploymentBuilder action requiring root "
+                                "without being the main muddle instance")
+            # utils.run_sync_muddle(['buildlabel', str(permissions_label)],builder,input_by_stdin=False,root=True)
+            utils.run_sync_muddle(['_sub_build_ignore_dep', str(permissions_label)],builder,input_by_stdin=False,root=True)
         else:
-            utils.run0("%s buildlabel '%s'"%(builder.muddle_binary,
-                                             permissions_label))
+            # utils.run0("%s buildlabel '%s'"%(builder.muddle_binary,
+            #                                  permissions_label))
+            # utils.run_sync_muddle(['buildlabel', str(permissions_label)],builder,input_by_stdin=False,root=False)
+            utils.run_sync_muddle(['_sub_build_ignore_dep', str(permissions_label)],builder,input_by_stdin=False,root=False)
 
     def apply_instructions(self, builder, label):
 
@@ -191,6 +201,9 @@ class FileDeploymentBuilder(Action):
                     else:
                         raise utils.GiveUp("File deployments don't know about instruction %s"%iname +
                                             " found in label %s (filename %s)"%(lbl, fn))
+
+    def requires_master(self):
+        return True
 
 
 # Legacy function to register a deployment without domains.

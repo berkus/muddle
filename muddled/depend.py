@@ -4,6 +4,8 @@ Dependency sets and dependency management
 
 import re
 import copy
+import uuid
+from muddled import utils
 
 from muddled.utils import GiveUp, MuddleBug, label_type_to_tag, LabelType, \
         sort_domains, total_ordering
@@ -329,6 +331,14 @@ class Label(object):
             Label.split_domain(new_domain)
         cp = self.copy()
         cp._domain = new_domain
+        return cp
+
+    def copy_with_flags(self, transient=None, system=None):
+        cp = self.copy()
+        if transient is not None:
+            cp.transient = transient
+        if system is not None:
+            cp.system = system
         return cp
 
     def is_definite(self):
@@ -964,6 +974,17 @@ class Action(object):
         """
         pass
 
+    def requires_master(self):
+        """
+        Returns true iff this action requires that it is run in the master process.
+
+        This is typically because user input on stdin is required by a command that
+        is run and the user ideally shouldn't have to check every terminal to see if
+        an action was required. It also allows prioritisation so they are run at the
+        start if they have no unsatisfied dependencies.
+        """
+        return False
+
     # It may be necessary to declare the following methods, to enable
     # sub-domains to work properly:
     #
@@ -1041,6 +1062,7 @@ class Rule(object):
         if (self.action is not None) and (not isinstance(action, Action)):
             raise MuddleBug("Attempt to create a rule with an object rule "
                             "which isn't an action but a %s."%(action.__class__.__name__))
+        self.UUID = uuid.uuid1()
 
     def replace_target(self, new_t):
         self.target = new_t
@@ -1149,10 +1171,10 @@ class Rule(object):
             return 1
         elif self.deps < other.deps:
             return -1
-        elif self.action > other.action:
-            return 1
-        elif self.action < other.action:
-            return -1
+        # elif self.action > other.action:
+        #     return 1
+        # elif self.action < other.action:
+        #     return -1
         else:
             return 0
 
@@ -1160,7 +1182,9 @@ class Rule(object):
         # XXX If we have __cmp__, we need __hash__ to be hashable. Does this
         # XXX implementation make sense? Would it be better to hash on our
         # XXX string representation (for instance)?
-        return hash(self.target) | hash(self.action)
+        return hash(str(self))
+        # Be careful when changing state of labels that changes the hash, this can
+        # cause problems if it is in a hash based datastructure such as a set.
 
     def to_string(self, showSystem = True, showUser = True):
         """
@@ -1407,6 +1431,30 @@ class RuleSet(object):
         # .. and new_map is the new map.
         self.map = new_map
 
+    def expand_wildcards(self, label, default_to_obvious_tag=True):
+        """
+        Given a label which may contain wildcards, return a set of labels that match.
+
+        As per the normal definition of labels, the <type>, <name>, <role> and
+        <tag> parts of the label may be wildcarded.
+
+        If default_to_obvious_tag is true, then if label has a tag of '*', it
+        will be replaced by the "obvious" (final) tag for this label type,
+        before any searching (so for a checkout: label, /checked_out would
+        be used).
+        """
+
+        if label.is_definite():
+            # There are no wildcards - it matches itself
+            # (should we check if it exists?)
+            return set([label])
+
+        if default_to_obvious_tag and label.tag == '*':
+            tag = utils.label_type_to_tag[label.type]
+            label = label.copy_with_tag(tag)
+
+        return self.targets_match(label)
+
 
     def to_string(self, matchLabel = None,
                   showUser = True, showSystem = True, ignore_empty=False):
@@ -1570,7 +1618,12 @@ def retag_label_list(labels, new_tag):
 
     return result
 
+
 def needed_to_build(ruleset, target, useTags = True, useMatch = False):
+    return needed_to_build_labels(ruleset, [target], useTags, useMatch)
+
+
+def needed_to_build_labels(ruleset, target_list, useTags = True, useMatch = False):
     """
     Given a rule set and a target, return a complete list of the rules needed
     to build the target.
@@ -1593,7 +1646,8 @@ def needed_to_build(ruleset, target, useTags = True, useMatch = False):
 
     # The set of labels we'd like to see asserted.
     targets = set()
-    targets.update(ruleset.targets_match(target, useMatch=useMatch))
+    for target in target_list:
+        targets.update(ruleset.targets_match(target, useMatch=useMatch))
 
     done_something = True
     trace = False
@@ -1612,7 +1666,7 @@ def needed_to_build(ruleset, target, useTags = True, useMatch = False):
             # Yep!
             if trace:
                 print
-                print "To build %s we need:"%target
+                print "To build %s we need:" % target_list
                 for r in rule_list:
                     print '    %s'%r
                 print

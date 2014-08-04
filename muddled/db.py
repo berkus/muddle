@@ -2,14 +2,22 @@
 Contains code which maintains the muddle database,
 held in root/.muddle
 """
+import StringIO
 
 import errno
+import logging
 import os
 import re
 import xml.dom
 import xml.dom.minidom
 import traceback
 import sqlite3
+import uuid
+import cPickle
+import collections
+import time
+
+pickle_ver = 2
 
 import muddled.utils as utils
 import muddled.depend as depend
@@ -18,6 +26,20 @@ from muddled.utils import GiveUp, MuddleBug
 from muddled.utils import domain_subpath, split_vcs_url
 from muddled.depend import normalise_checkout_label
 from muddled.repository import Repository
+
+logger = logging.getLogger("muddled.db")
+# logger.setLevel(logging.INFO)
+
+UUID = uuid.uuid1()
+
+sqlite3.register_adapter(uuid.UUID, str)
+sqlite3.register_converter("UUID", uuid.UUID)
+
+sqlite3.register_adapter(depend.Label, lambda label: str(label.copy_with_flags(system=False)))
+sqlite3.register_converter("LABEL", depend.Label.from_string)
+
+sqlite3.register_adapter(bool, int)
+sqlite3.register_converter("BOOLEAN", lambda v: bool(int(v)))
 
 class CheckoutData(object):
     """
@@ -109,48 +131,155 @@ class CheckoutData(object):
 def db_path(root_path):
     return os.path.join(root_path,".muddle","tag_db")
 
-def connect_db(root_path):
-
-    db_path_ = db_path(root_path)
+def _connect_db(root_path):
+    """
+    Opens an sqlite3 connection to the tag_db database given a root path to a buildtree or subdomain
+    If a database does not already exist then it will create one with the relevant tables, though a
+    root database requires additional tables and should be initialised by creating a database object
+    at its root.
+    """
+    db_path_ = os.path.join(root_path,".muddle","tag_db")
     (dir,name) = os.path.split(db_path_)
     utils.ensure_dir(dir)
-    db_connection = sqlite3.connect(db_path_)
+    setup = os.path.exists(db_path_)
+    root = not os.path.exists(os.path.join(root_path,".muddle","am_subdomain"))
 
-    #database of tags,
-    cursor = db_connection.cursor()
-    cursor.execute("CREATE TABLE IF NOT EXISTS tags (label TEXT PRIMARY KEY ON CONFLICT FAIL, "
-                    "pid_curr_processor INTEGER DEFAULT (0), status INTEGER DEFAULT (0), "
-                    "timestamp TIMESTAMP DEFAULT (CURRENT_TIMESTAMP) );")
-    db_connection.commit()
-    return db_connection
+    #assuming that if a database exists at the location then it has atleast the tables setup.
+    conn = sqlite3.connect(db_path_, timeout=11, detect_types=sqlite3.PARSE_DECLTYPES)
+    main_close = conn.close
+    start_proc = time.clock()
+    start_real = time.time()
+    class TimedConn():
+        def __init__(self, conn):
+            self.conn = conn
+        def __getattr__(self, item):
+            return getattr(self.conn, item)
+        def __setattr__(self, key, value):
+            if key is 'conn':
+                self.__dict__[key] = value
+            else:
+                setattr(self.conn, key, value)
+        def time(self):
+            elapsed_proc = time.clock() - start_proc
+            elapsed_real = time.time() - start_real
+            max_elapsed = max(elapsed_real, elapsed_proc)
+            if max_elapsed>8:
+                level = logging.WARNING
+            elif max_elapsed>3:
+                level = logging.INFO
+            else:
+                level = logging.DEBUG
+            if elapsed_proc>3 or elapsed_real>3:
+                parent = traceback.extract_stack()[-3]
+                path = parent[0]
+                path = os.path.split(path)[1]
+                line = parent[1]
+                function = parent[2]
+                logger.log(level, "Connection to %s:%s:%s took:" % (path, line, function))
+                logger.log(level, "    proc: %s" % elapsed_proc)
+                logger.log(level, "    real: %s" % elapsed_real)
+                if level >= logging.WARNING:
+                    logger.log(level, traceback.format_stack())
+        def close(self):
+            self.time()
+            self.conn.close()
+        def __exit__(self, *args, **kwargs):
+            self.time()
+            self.conn.__exit__(*args, **kwargs)
+    conn = TimedConn(conn)
+    conn.row_factory = sqlite3.Row
+    if not setup:
+        conn.execute("CREATE TABLE IF NOT EXISTS labels "
+                        "(label LABEL PRIMARY KEY, "
+                         "done BOOLEAN DEFAULT (0),"
+                         "transient BOOLEAN DEFAULT (0));")
+        if root:
+            conn.execute("CREATE TABLE IF NOT EXISTS processes "
+                            "(master        BOOLEAN DEFAULT (0), "
+                             "pid           INTEGER UNIQUE, "
+                             "uuid          UUID PRIMARY KEY ON CONFLICT FAIL, "
+                             "pause_requested_by UUID DEFAULT (NULL), "
+                             "paused        BOOLEAN DEFAULT (0));")
 
-def copy_tags(db_src, db_target, tag_label):
-    src_con = connect_db(db_src.root_path)
-    target_con = connect_db(db_target.root_path)
+            # maps labels to the matching rules
+            conn.execute("CREATE TABLE IF NOT EXISTS labels_to_rules "
+                            "(target        LABEL, "
+                             "rule_uuid     UUID);")
+            # conn.execute("CREATE INDEX IF NOT EXISTS l_to_r_target ON  labels_to_rules"
+            #                 "(target);")
 
-    src_con.execute("ATTACH ? AS target", (db_path(db_target.root_path),))
-    src_con.execute("INSERT OR REPLACE INTO target.tags SELECT * FROM tags WHERE label LIKE ?", (utils.label_part_join(tag_label,'%'),))
-    src_con.execute("DETACH target")
-    src_con.commit()
-    target_con.commit()
-    src_con.close()
-    target_con.close()
+            # maps rules to their dependencies
+            conn.execute("CREATE TABLE IF NOT EXISTS rules_to_labels "
+                            "(dep           LABEL, "
+                             "rule_uuid     UUID);")
 
-    print "copying tags from %s to %s" % (db_src.root_path, db_target.root_path)
+            conn.execute("CREATE TABLE IF NOT EXISTS rules "
+                            "(rule_uuid     UUID PRIMARY KEY, "
+                             "target        LABEL UNIQUE ON CONFLICT FAIL, "
+                             "transient     BOOLEAN DEFAULT (0),"
+                             # pickled rule instance, the plan is to not need to run the build descriptions
+                             # for the secondary processes
+                             "pickle        BLOB, "
+                             "req_master    BOOLEAN DEFAULT (0), "
+                             "owner_pid     INTEGER DEFAULT (NULL), "
+                             # status meaning defined by Database.CLEAR etc. constants
+                             "status        INTEGER DEFAULT (0), "
+                             "timestamp     TIMESTAMP DEFAULT (CURRENT_TIMESTAMP), "
+                             "owner_uuid    UUID);")
 
-def copy_tags_with(db_src, db_target, tags):
+            # committed is 0 where it is part of the current run.
+            # committed will be 1 to indicate it is stored for the next command when
+            # the other parts are converted to read from the db rather than a file.
+            conn.execute("CREATE TABLE IF NOT EXISTS just_pulled "
+                            "(label         LABEL,"
+                             "committed     BOOLEAN DEFAULT (0),"
+                             "PRIMARY KEY (label, committed) ON CONFLICT IGNORE);")
+        conn.commit()
 
-    src_con = connect_db(db_src.root_path)
-    target_con = connect_db(db_target.root_path)
+    return conn
 
-    src_con.execute("ATTACH ? AS target", (db_path(db_target.root_path),))
-    for tag in tags:
-        src_con.execute("INSERT OR REPLACE INTO target.tags SELECT * FROM tags WHERE label=?", (tag,))
-    src_con.execute("DETACH target")
-    src_con.commit()
-    target_con.commit()
-    src_con.close()
-    target_con.close()
+def _label_wild_convert(label):
+    """
+    Returns a copy of the label with * wildcards changed sqlite style wildcards (%)
+    """
+    conv_label = label.copy()
+
+    for attr in {"_type", "_name", "_role", "_tag"}:
+        if getattr(conv_label, attr) == "*":
+            setattr(conv_label, attr, "%")
+    return conv_label
+
+def copy_tags(src_dir, tgt_dir, tag_label):
+    # Within a db the table labels should only contain labels for that domain,
+    # subdomains contain their own labels tables
+
+    # Ensures that tables are defined in the target db
+    _connect_db(tgt_dir).close()
+
+    with _connect_db(src_dir) as src_con:
+        src_con.execute("ATTACH ? AS target", (db_path(tgt_dir),))
+        src_con.commit()
+        src_con.execute("INSERT OR REPLACE INTO target.labels SELECT * FROM labels WHERE label LIKE ?",
+                        (_label_wild_convert(tag_label),))
+        src_con.commit()
+        src_con.execute("DETACH target")
+        src_con.commit()
+
+    print "copying tags from %s to %s" % (src_dir, tgt_dir)
+
+def copy_tags_with(src_dir, tgt_dir, tags):
+
+    # Ensures that tables are defined in the target db
+    _connect_db(tgt_dir).close()
+    with _connect_db(src_dir) as src_con:
+        src_con.execute("ATTACH ? AS target", (db_path(tgt_dir),))
+        src_con.commit()
+        for tag in tags:
+            src_con.execute("INSERT OR REPLACE INTO target.labels SELECT * FROM labels WHERE label=?",
+                            (tag,))
+        src_con.commit()
+        src_con.execute("DETACH target")
+        src_con.commit()
 
 class Database(object):
     """
@@ -294,10 +423,15 @@ class Database(object):
     PROCESSING = 1
     DONE = 2
 
+    logger = logging.getLogger("muddled.db.Database")
+
     def __init__(self, root_path):
         """
         Initialise a muddle database with the given root_path.
         """
+
+        self.logger.debug("New db at %s" % root_path)
+
         self.root_path = root_path
         utils.ensure_dir(os.path.join(self.root_path, ".muddle"))
         self.RootRepository_pathfile = PathFile(self.db_file_name("RootRepository"))
@@ -307,7 +441,7 @@ class Database(object):
 
         self.just_pulled = JustPulledFile(os.path.join(self.root_path,
                                           '.muddle',
-                                          '_just_pulled'))
+                                          '_just_pulled'), self.root_path)
 
         self.checkout_data = {}
 
@@ -318,6 +452,9 @@ class Database(object):
 
         # A set of "asserted" labels
         self.local_tags = set()
+
+        # Set of transient rules that have been run by the process
+        self.local_rules = set()
 
         # Upstream repositories
         self.upstream_repositories = {}
@@ -384,6 +521,7 @@ class Database(object):
     def _inner_labels(self):
         """Return a list of all the labels we use.
 
+        This is so that mechanics.py can amend them all when we're being
         This is so that mechanics.py can amend them all when we're being
         included as a subdomain...
 
@@ -598,15 +736,19 @@ class Database(object):
         utils.mark_as_domain(self.root_path, domain_name)
 
     def set_checkout_data(self, checkout_label, co_data):
+        #print "setting data for %s, data %s" % (checkout_label, co_data)
+        #traceback.print_stack()
         key = normalise_checkout_label(checkout_label)
         self.checkout_data[key] = co_data
 
     def get_checkout_data(self, checkout_label):
+        #print "getting checkout data for %s" % checkout_label
         key = normalise_checkout_label(checkout_label)
         try:
             return self.checkout_data[key]
         except KeyError:
-            raise GiveUp('There is no checkout data registered for label %s'%checkout_label)
+            self.logger.error("checkout data: %s" % self.checkout_data)
+            raise GiveUp('There is no checkout data registered for label %s, checkout data: %s'%checkout_label)
 
     def dump_checkout_paths(self):
         print "> Checkout paths .."
@@ -641,6 +783,7 @@ class Database(object):
         try:
             rel_dir = self.checkout_data[key].location
         except KeyError:
+            self.logger.error("checkout data: %s" % self.checkout_data)
             raise GiveUp('There is no checkout data (path) registered for label %s'%checkout_label)
         return os.path.join(root, rel_dir)
 
@@ -1246,12 +1389,9 @@ class Database(object):
 
     def tag_root_dir(self, label):
         if label.domain is not None:
-            return os.path.join(self.root_path, domain_subpath(label.domain))
+            return self.domain_root_dir(label.domain)
         else:
             return self.root_path
-
-    def label_to_dom_tag(self, label):
-        return (label.domain, self.tag_db_label(label))
 
     def domain_root_dir(self, domain):
         return os.path.join(self.root_path, domain_subpath(domain))
@@ -1259,96 +1399,499 @@ class Database(object):
     def tag_db(self, label):
         return os.path.join(self.tag_root_dir(label), '.muddle', 'tags_db')
 
-    def tag_db_label(self, label):
-        if (label.role is None):
-            leaf = label.tag
+    def set_rules(self, ruleset, target_list):
+        self.ind = ""
+
+        # TODO: pass these sets as part of a mutable object rather than patching the instance to contain new attributes
+        self._r_to_set = set()
+        self._r_l_to_set = set()
+        self._l_to_set = set()
+        self._l_r_to_set = set()
+
+        try:
+            labels = set()
+            for target in target_list:
+                labels.update(ruleset.targets_match(target, useMatch=True))
+            for label in labels:
+                self.logger.info(self.ind+"root target %s" % label)
+                self.ind += " |"
+                self._set_rules_label(ruleset, label, set([label]))
+                self.ind = self.ind[:-2]
+            with self._connect_root_db() as conn:
+                self.logger.info("Committing ruleset to db")
+
+                self.logger.debug("Committing %s rules" % len(self._r_to_set))
+                for rule in self._r_to_set:
+
+                    if rule.action:
+                        req_master = rule.action.requires_master()
+                    else:
+                        req_master = False
+                    conn.execute("INSERT OR IGNORE INTO rules (rule_uuid, target, pickle, req_master, transient) "
+                                    "VALUES (?, ?, ?, ?, ?)",
+                                 (rule.UUID, rule.target, sqlite3.Binary(cPickle.dumps(rule, pickle_ver)),
+                                  req_master, rule.target.transient))
+
+                self.logger.debug("Committing %s labels" % len(self._l_to_set))
+                for label in self._l_to_set:
+                    conn.execute("INSERT OR IGNORE INTO labels (label, transient) VALUES (?, ?)",
+                                                   (label.copy_with_domain(None),label.transient))
+
+                self.logger.debug("Committing %s label to rule matches" % len(self._l_r_to_set))
+                for label, rule in self._l_r_to_set:
+                    conn.execute("INSERT INTO labels_to_rules (target, rule_uuid) VALUES (?, ?)",
+                                                   (label,rule.UUID))
+
+                self.logger.debug("Committing %s rule dependencies" % len(self._r_l_to_set))
+                for rule, label in self._r_l_to_set:
+                    conn.execute("INSERT INTO rules_to_labels (dep, rule_uuid) VALUES (?, ?)",
+                                                   (label,rule.UUID))
+
+                conn.commit()
+
+        except:
+            #self.clear_rules()
+            raise
+
+    def _is_label_entered(self, label):
+        return label in self._l_to_set
+
+    def _is_rule_entered(self, rule):
+        return rule in self._r_to_set
+
+    def _add_label_to_rule(self, label, rule):
+        self._l_r_to_set.add((label, rule))
+
+    def _add_rule_to_label(self, rule, label):
+        self._r_l_to_set.add((rule, label))
+
+    def _enter_rule(self, rule):
+        self._r_to_set.add(rule)
+
+    def _enter_label(self, label):
+        self._l_to_set.add(label)
+
+    def _set_rules_label(self, ruleset, label, seen_labels):
+        self.logger.debug(self.ind+"set label %s - %s" % (label, self.is_tag_done(label)))
+        self.ind += " |"
+
+        if label.transient and label.is_wildcard():
+            raise GiveUp("Assumption has been violated, it is assumed that wildcard rules are non-transient. "
+                            "Violated by label %s" % label)
+
+        if not self.is_tag_done(label):
+            # will not add rules for labels that are already processed
+            rules = ruleset.rules_for_target(label)
+            self._enter_label(label)
+            for rule in rules:
+                if rule.target.transient and rule.target != label:
+                    raise MuddleBug("Assumption violated, transient rule %s matches %s" % (rule, label))
+
+                if label.is_wildcard() and rule.target == label and rule.action:
+                    raise MuddleBug("Assumption violated, wildcard label %s has an action within rule %s"
+                                    % (label, rule))
+
+                exp_deps = set([])
+                for dep in rule.deps:
+                    exp_deps.update(ruleset.expand_wildcards(dep))
+                rule.deps = exp_deps
+
+                self._add_label_to_rule(label, rule)
+                self._set_rules_rule(ruleset, rule, seen_labels)
+        self.ind = self.ind[:-2]
+
+    def _set_rules_rule(self, ruleset, rule, seen_labels):
+        self.logger.debug(self.ind + "set rule %s - %s" % (rule,self.is_rule_done(rule)))
+        self.ind += " |"
+        self._enter_rule(rule)
+
+        # For parallel processes transient labels should be built in each processes separately as
+        # they may set environment variables or other local state so to keep the dependecy search
+        # only one level deep it must be assumed that there will be no indirect dependencies on
+        # transient labels, which is most readily enforced by disallowing rules with non-transient
+        # targets to depend on transient labels
+        for dep in rule.deps:
+            if dep.transient and not rule.target.transient:
+                raise GiveUp("Assumption about dependencies violated, non-transient %s "
+                                "depends on transient label %s" % (rule.target, dep))
+
+        if seen_labels.intersection(rule.deps):
+            raise GiveUp("Circular dependencies occured, labels seen as own dependencies: %s"
+                         % seen_labels.intersection(rule.deps))
+        if self.is_tag_done(rule.target.copy_with_flags(transient=False)):
+            self.set_rule_done(rule)
+            self.ind = self.ind[:-2]
+            return
         else:
-            leaf = "%s-%s"%(label.role, label.tag)
-        return utils.label_part_join(label.type,label.name, leaf)
+            self._enter_label(rule.target)
+            for label in rule.deps:
+                self._add_rule_to_label(rule, label)
+                self._set_rules_label(ruleset, label, seen_labels.union({label}))
+        self.ind = self.ind[:-2]
 
-    def _is_tag_n(self,label,state, dom_tag=None):
-        if dom_tag is None:
-            tag = self.tag_db_label(label)
-            domain = label.domain
-        else:
-            (domain,tag) = dom_tag
-        with connect_db(self.domain_root_dir(domain)) as db_connection:
-            cursor = db_connection.cursor()
+    def get_satisfied_rule(self, allow_master=False, req_master=False):
+        self.logger.info("getting sat. rule, allow_master: %s, req_master: %s" % (allow_master, req_master))
+        with self._connect_root_db() as conn:
+            # if self.logger.isEnabledFor(logging.DEBUG):
+            #     cursor = conn.execute("SELECT * FROM rules")
+            #     for row in cursor:
+            #         # Rows are weird to print, the behaviour of them with print a statement is defined in C with no way
+            #         # to get the same output in python from a direct method call. The C function uses the tuple's print
+            #         # behaviour so wrapping in a tuple gives equivalent, if slightly indirect, results.
+            #         self.logger.debug(tuple(row))
 
-            cursor.execute("SELECT * FROM tags WHERE label=? and status=?", (tag,state))
-            return cursor.fetchone() is not None
+            if not allow_master:
+                cursor = conn.execute(
+                    "SELECT * FROM rules WHERE req_master=0 AND status=0 AND "
+                        "rule_uuid NOT IN (SELECT rule_uuid FROM rules_to_labels AS r_l "
+                                            "JOIN labels AS l ON r_l.dep=l.label WHERE done=0 and l.transient=0)")
+            elif req_master:
+                cursor = conn.execute(
+                    "SELECT * FROM rules WHERE req_master=1 AND status=0 AND "
+                        "rule_uuid NOT IN (SELECT rule_uuid FROM rules_to_labels AS r_l "
+                                            "JOIN labels AS l ON r_l.dep=l.label WHERE done=0 and l.transient=0)")
+            else:
+                cursor = conn.execute(
+                    "SELECT * FROM rules WHERE status=0 AND "
+                        "rule_uuid NOT IN (SELECT rule_uuid FROM rules_to_labels AS r_l "
+                                            "JOIN labels AS l ON r_l.dep=l.label WHERE done=0 and l.transient=0)")
+            # The cursor now contains rules where the non-transient dependencies in the root domain are satisfied,
+            # which clearly doesn't help for rules in subdomains which have no dependencies in the root domain.
+            # This is why the later call to _rule_deps_satisfied is used.
 
-    def is_tag_clear(self,label, dom_tag=None):
-        return not self.is_tag_done(label, dom_tag) and not self.is_tag_processing(label, dom_tag)
+            while True:
+                result = cursor.fetchone()
+                if result:
+                    rule = cPickle.load(StringIO.StringIO(result['pickle']))
+                    self.logger.debug("  pot. results %s" % rule)
+                else:
+                    self.logger.debug("  no pot. results remain")
+                    return None
 
-    def is_tag_processing(self, label, dom_tag=None):
+                if self.is_rule_done(rule):
+                    # rule has transient target so done state is stored locally
+                    self.logger.debug("    pot. results %s already done" % rule)
+                    continue
+                if not self._rule_deps_satisfied(rule, conn):
+                    # rule has unsatisfied transient or subdomain dependencies
+                    self.logger.debug("    pot. results %s not satisfied" % rule)
+                    continue
+
+                self.logger.debug("  returning %s, satisfied and not done" % rule)
+                return rule
+
+    def _rule_deps_satisfied(self, rule, conn):
         """
-        Is this label being processed?
-        """
-        return self._is_tag_n(label,Database.PROCESSING, dom_tag)
+        Checks that the dependencies of a rule are satisfied
 
-    def is_tag_done(self, label, dom_tag=None):
+        This cannot be done in SQL because of transient label states being stored locally and
+        domains having different db files
         """
-        Is this label asserted?
-        """
-        if dom_tag is not None or not label.transient:
-            return self._is_tag_n(label,Database.DONE, dom_tag)
-        else:
-            return label in self.local_tags
+        self.logger.debug("    pot. results %s checking deps" % rule)
+        for l in rule.deps:
 
-    def set_tag_processing(self, label):
-        """
-        Attempt to get permission to start processing the label, returns permission granted or not.
-        Assumes that tag has not been set as done.
-        """
-
-        if label.transient:
-            if self.is_tag_done(label):
+            if not self.is_tag_done(l):
+                self.logger.debug("      %s not satisfied, failed" % l)
                 return False
             else:
-                return True
+                self.logger.debug("      %s satisfied" % l)
+        return True
 
-        tag_file = self.tag_db_label(label)
+    def _label_wild_rules_done(self, label):
+        """
+        Determines if all rules with targets matching but not equal to label have been run.
+        """
+        # assumes that wildcard rules are non-transient so only the directly matching rule may be transient
+        with self._connect_root_db() as conn:
+            cursor = conn.execute(
+                "SELECT l_r.target FROM "
+                        # Finds rules that match label. Performed as subquery for performance reasons.
+                        "(SELECT * FROM labels_to_rules WHERE target=?) AS l_r "
+                        "JOIN rules AS r "
+                        "WHERE "
+                            "r.rule_uuid=l_r.rule_uuid AND "
+                            "l_r.target!=r.target AND "
+                            "status!=?", (label, self.DONE))
+            return cursor.fetchone() is None
+
+    def _label_exact_rule_done(self, label):
+        with self._connect_root_db() as conn:
+            cursor = conn.execute("SELECT pickle FROM rules WHERE target=? LIMIT 1", (label,))
+            rule = cPickle.load(StringIO.StringIO(cursor.fetchone()['pickle']))
+        self.is_rule_done(rule)
+
+    def clear_rules(self):
+        self.logger.info("clearing rules")
+        with self._connect_root_db() as conn:
+            # cursor = conn.execute ("SELECT * FROM rules WHERE status=?", (self.PROCESSING,))
+            # if cursor.fetchone():
+            #     raise MuddleBug("db being cleared while rule is being processed!")
+            conn.execute("DELETE FROM labels_to_rules")
+            conn.execute("DELETE FROM rules_to_labels")
+            conn.execute("DELETE FROM rules")
+            #conn.execute("DELETE FROM labels WHERE transient=?", (True,))
+            #conn.execute("DELETE FROM labels WHERE done=?", (False,))
+            conn.commit()
+
+    def _is_rule_n(self, rule, state):
+        if rule.target.transient:
+            done = (rule in self.local_rules)
+            if state == Database.CLEAR:
+                return not done and not self._is_rule_n(rule, Database.PROCESSING)
+            elif state == Database.DONE:
+                return done
+            else:
+                pass
+                # Transient rules are either clear or processing in the database, it is assumed that
+                # running the same rule in parallel may cause problems
+        with self._connect_root_db() as conn:
+            cursor = conn.cursor()
+
+            cursor.execute("SELECT * FROM rules WHERE rule_uuid=? and status=?", (rule.UUID,state))
+            return cursor.fetchone() is not None
+
+    def is_rule_clear(self, rule):
+        return self._is_rule_n(rule, Database.CLEAR)
+
+    def is_rule_processing(self, rule):
+        """
+        Is this rule being processed?
+        """
+        return self._is_rule_n(rule, Database.PROCESSING)
+
+    def is_rule_done(self, rule):
+        """
+        Is this rule asserted?
+        """
+        return self._is_rule_n(rule, Database.DONE)
+
+    def get_rule_for_label(self, label):
+        if self.is_domain_db():
+            return None
+            # TODO: search for rule in parent/grandparent domain
+            # This code path is only expected when unstamping
+        with self._connect_root_db() as conn:
+            cursor = conn.cursor()
+
+            cursor.execute("SELECT * FROM rules WHERE target=?", (label,))
+            result = cursor.fetchone()
+            if result:
+                return cPickle.load(StringIO.StringIO(result['pickle']))
+            return None
+
+    def set_rule_clear(self, rule):
+        if rule.target.transient:
+            self.local_rules.discard(rule)
+            # continues as transient rules may be in the processing state
+        with self._connect_root_db() as db_connection:
+            db_connection.execute("UPDATE rules SET "
+                                        "owner_pid=NULL, "
+                                        "status=?, "
+                                        "timestamp=CURRENT_TIMESTAMP, "
+                                        "owner_uuid=NULL "
+                                    "WHERE rule_uuid=?",
+                                  (Database.CLEAR, rule.UUID))
+
+    def set_rule_processing(self, rule):
+        """
+        Attempt to get permission to start processing the rule, returns permission granted or not.
+        """
         pid = os.getpid()
 
-        with connect_db(self.tag_root_dir(label)) as db_connection:
-            db_connection.execute("INSERT OR IGNORE INTO tags (label, status, pid_curr_processor) VALUES (?, ?, ?)",
-                                       (tag_file,Database.PROCESSING, pid))
+        if rule.target.transient:
+            self.local_rules.discard(rule)
+            # Done for consistency, setting a done and non-transient rule to processing causes it to no longer be done.
+            # This is not expected an expected occurence whether the target is transient or otherwise.
+
+        with self._connect_root_db() as db_connection:
+            db_connection.execute(
+                "UPDATE OR IGNORE rules "
+                    "SET status=?, owner_pid=?, owner_uuid=?, timestamp=CURRENT_TIMESTAMP "
+                    "WHERE target=? and rule_uuid=? and status=?",
+                (Database.PROCESSING, pid, UUID, rule.target, rule.UUID, Database.CLEAR))
             db_connection.commit()
-            cursor = db_connection.execute("SELECT * FROM tags WHERE label=?", (tag_file,))
+            cursor = db_connection.execute(
+                "SELECT * FROM rules "
+                    "WHERE target=? AND rule_uuid=? AND owner_uuid=? AND owner_pid=? AND status=?",
+                (rule.target, rule.UUID, UUID, pid, Database.PROCESSING))
             result = cursor.fetchone()
-            return result is not None and result[1]==pid and result[2]==Database.PROCESSING
+            return result is not None
 
-    def set_tag_done(self, label):
+    def set_rule_done(self, rule):
         """
-        Assert this label.
-        """
+        Sets a rule and its target to be marked as done.
 
-        if (label.transient):
-            self.local_tags.add(label)
+        Assumes that the rule has been marked as processing previously but does not check this.
+
+        If the target is transient then it is assumed that the action may be necessary for each
+        process so the rule is reset to a clear state
+        """
+        self.logger.info("rule %s done" % rule)
+        if rule.target.transient:
+            status = Database.CLEAR
+            self.local_rules.add(rule)
         else:
-            with connect_db(self.tag_root_dir(label)) as db_connection:
-                db_connection.execute("INSERT OR REPLACE INTO tags (label, status) VALUES (?, ?)",
-                                           (self.tag_db_label(label),Database.DONE))
-                db_connection.commit()
+            status = Database.DONE
+        with self._connect_root_db() as conn:
+            conn.execute("UPDATE rules SET "
+                                        "owner_pid=NULL, "
+                                        "status=?, "
+                                        "timestamp=CURRENT_TIMESTAMP, "
+                                        "owner_uuid=NULL "
+                                    "WHERE rule_uuid=?",
+                                  (status, rule.UUID))
+            conn.commit()
+
+            # Sets labels as done when all rules they depend on have been run.
+            # Assume wildcards aren't transient so they have no transient matching rules
+            if rule.target.is_wildcard():
+                cursor = conn.execute("SELECT target AS label FROM labels_to_rules WHERE rule_uuid=?", (rule.UUID,))
+                for row in cursor:
+                    label = row['label']
+                    if self._label_wild_rules_done(label) and self._label_exact_rule_done(label):
+                        self.set_tag(label)
+
+        if not rule.target.is_wildcard() and self._label_wild_rules_done(rule.target):
+            self.set_tag(rule.target)
+        if not self.is_rule_done(rule):
+            raise MuddleBug("Rule %s set as done but is_rule_done returning as false!" % rule)
+
+    # def tag_exists(self, label):
+    #     if label.transient:
+    #         return False
+    #     with self._connect_domain_db(label.domain) as conn:
+    #         cursor = conn.execute("SELECT 'd' as dummy FROM labels WHERE label=?", (label.copy_with_domain(None),))
+    #         return cursor.fetchone() is not None
+
+    def is_tag_done(self, label):
+        if label.transient:
+            return label.copy_with_flags(system=None) in self.local_tags
+        with self._connect_domain_db(label.domain) as conn:
+            cursor = conn.execute("SELECT * FROM labels WHERE label=? AND done=?",
+                                  (label.copy_with_domain(None), True))
+            return cursor.fetchone() is not None
+
+    def set_tag(self, label):
+        if label.transient:
+            self.local_tags.add(label.copy_with_flags(system=None))
+        else:
+            with self._connect_domain_db(label.domain) as conn:
+                conn.execute("INSERT OR REPLACE INTO labels (label, done, transient) VALUES (?, ?, ?)",
+                             (label.copy_with_domain(None), True, label.transient))
+        self.logger.info("tag %s added" % label)
 
     def clear_tag(self, label):
         if (label.transient):
             self.local_tags.discard(label)
         else:
-            with connect_db(self.domain_root_dir(label.domain)) as db_connection:
-                db_connection.execute("DELETE FROM tags WHERE label=?", (self.tag_db_label(label),))
+            with self._connect_domain_db(label.domain) as db_connection:
+                db_connection.execute("DELETE FROM labels WHERE label=?", (label.copy_with_domain(None),))
                 db_connection.commit()
 
-    def clear_tags_in(self, directory, domain=None):
+    def clear_tags_type(self, type, domain=None):
         if domain is not None:
-            path = os.path.join(self.root_path, domain)
+            path = self.domain_root_dir(domain)
         else:
             path = self.root_path
-        with connect_db(path) as db_connection:
+        with _connect_db(path) as conn:
 
-            db_connection.execute("DELETE FROM tags WHERE label LIKE ?", (utils.label_part_join(directory,'%'),))
-            db_connection.commit()
+            conn.execute("DELETE FROM labels WHERE label LIKE ?",
+                                  (type+'%',))
+            conn.commit()
+
+    def is_master(self):
+        with self._connect_root_db() as conn:
+            cursor = conn.execute("select * from processes where pid=? and uuid=? and master=1",
+                         (os.getpid(), UUID))
+            return cursor.fetchone() is not None
+
+    def other_processes_exist(self):
+        with self._connect_root_db() as conn:
+            cursor = conn.execute("select * from processes where pid!=? and uuid!=?", (os.getpid(), UUID))
+            return cursor.fetchone() is not None
+
+    def attempt_set_master(self):
+        with self._connect_root_db() as conn:
+            conn.execute("update or fail processes set master=1 where pid=? and uuid=? and "
+                         "not exists (select master from processes where master=1)",
+                         (os.getpid(), UUID))
+            conn.commit()
+
+    def register_process(self):
+        self.logger.info("$$$registered proc %s" % os.getpid())
+        with self._connect_root_db() as conn:
+            conn.execute("insert into processes (pid, uuid) values (?,?)",
+                         (os.getpid(), UUID))
+            conn.commit()
+
+    def deregister_process(self):
+        self.logger.info("$$$deregister proc %s" % os.getpid())
+        with self._connect_root_db() as conn:
+            conn.execute("delete from processes where pid=? and uuid=?",
+                         (os.getpid(), UUID))
+            conn.commit()
+
+    def request_pause_others(self):
+        if not self.is_master():
+            raise MuddleBug("requested pause whilst not being master")
+        with self._connect_root_db() as conn:
+            conn.execute("update or fail processes set pause_requested_by=? where pid!=? and "
+                         "uuid!=? and pause_requested_by is NULL",
+                         (UUID, os.getpid(), UUID))
+            conn.commit()
+
+    def release_pause_request(self):
+        if not self.is_master():
+            raise MuddleBug("requested pause release whilst not being master")
+        with self._connect_root_db() as conn:
+            conn.execute("update or fail processes set pause_requested_by=NULL where pid!=? and "
+                         "uuid!=? and pause_requested_by=?",
+                         (os.getpid(), UUID, UUID))
+            conn.commit()
+
+    def are_others_paused(self):
+        with self._connect_root_db() as conn:
+            cursor = conn.execute("select * from processes where pid!=? and uuid!=? and paused!=0",
+                         (os.getpid(), UUID))
+            return cursor.fetchone() is not None
+
+    def pause(self):
+        with self._connect_root_db() as conn:
+            conn.execute("update or fail processes set paused = 1 where pid=? and uuid=? and "
+                         "pause_requested_by is not null",
+                         (os.getpid(), UUID))
+            conn.commit()
+
+    def unpause(self):
+        with self._connect_root_db() as conn:
+            conn.execute("update or fail processes set paused = 0 where pid=? and uuid=? and "
+                         "pause_requested_by is null",
+                         (os.getpid(), UUID))
+            conn.commit()
+
+    def is_paused(self):
+        with self._connect_root_db() as conn:
+            cursor = conn.execute("select * from processes where pid=? and uuid=? and paused=0",
+                         (os.getpid(), UUID))
+            return cursor.fetchone() is not None
+
+    def is_pause_requested(self):
+        with self._connect_root_db() as conn:
+            cursor = conn.execute("select * from processes where pid=? and uuid=? "
+                                  "and pause_requested_by is not NULL",
+                                  (os.getpid(), UUID))
+            return cursor.fetchone() is not None
+
+    def _connect_domain_db(self, domain):
+        return _connect_db(self.domain_root_dir(domain))
+
+    def _connect_root_db(self):
+        if self.is_domain_db():
+            raise MuddleBug("Attempting to connect to root db when inside a subdomain")
+        return _connect_db(self.root_path)
+
+    def is_domain_db(self):
+        return os.path.exists(os.path.join(self.root_path,".muddle","am_subdomain"))
 
     def commit(self):
         """
@@ -1834,11 +2377,71 @@ class JustPulledFile(object):
     """Our memory of the checkouts that have just been pulled.
     """
 
-    def __init__(self, file_name):
+    logger = logging.getLogger("muddled.db.JustPulledFile")
+    # logger.setLevel(logging.DEBUG)
+
+    # This acts nearly exactly like a normal set, the difference being persistence and not
+    # implementing all of the named methods from the builtin set class.
+    class JustPulledSet(collections.MutableSet):
+        # TODO: clear this set properly on exit of a non-internal muddle
+        # It currently seems that any command which writes to disk will first clear it so it operates as expected.
+        # This may not be the case in the future however and I may have missed some write commands.
+        def __len__(self):
+            with _connect_db(self.db_root) as conn:
+                cursor = conn.execute("SELECT count(*) as count FROM just_pulled WHERE committed=0")
+                return cursor.fetchone()['count']
+
+        def __contains__(self, x):
+            with _connect_db(self.db_root) as conn:
+                cursor = conn.execute("SELECT 0 as dummy FROM just_pulled WHERE label=? and committed=? LIMIT 1",
+                                      (x,False))
+                return cursor.fetchone() is not None
+
+        def discard(self, value):
+            with _connect_db(self.db_root) as conn:
+                conn.execute("DELETE FROM just_pulled WHERE label=? and committed=?", (value, False))
+                conn.commit()
+
+        def __iter__(self):
+            with _connect_db(self.db_root) as conn:
+                cursor = conn.execute("SELECT label FROM just_pulled WHERE committed=?", (False,))
+                return [row['label'] for row in cursor.fetchall()].__iter__()
+
+        def add(self, value):
+            JustPulledFile.logger.debug("Added %s to the actual set" % value)
+            with _connect_db(self.db_root) as conn:
+                conn.execute("INSERT INTO just_pulled (label, committed) VALUES (?, ?)", (value, False))
+                conn.commit()
+
+        def __ior__(self, other):
+            JustPulledFile.logger.debug("Adding %s to the set" % set(other))
+            with _connect_db(self.db_root) as conn:
+                for value in other:
+                    conn.execute("INSERT INTO just_pulled (label, committed) VALUES (?, ?)", (value, False))
+                conn.commit()
+            return self
+
+        def __init__(self, db_root):
+            self.db_root = db_root
+
+        # Some methods (eg. or, and) require a new set to be created. Clearly we don't want
+        # arbitrary operations being done to what would be assumed to be a normal set so we
+        # override this function so new sets returned from the operations don't alter the database.
+        def _from_iterable(cls, it):
+            return set(it)
+
+        def copy(self):
+            return set(self)
+
+        # The abstract base class doesn't implement the named versions of the set operations.
+        def update(self, other):
+            self |= other
+
+    def __init__(self, file_name, db_root):
         """Set the path to the _just_pulled file.
         """
         self.file_name = file_name
-        self.labels = set()
+        self.labels = self.JustPulledSet(db_root)
 
     def get_from_disk(self):
         """Retrieve the contents of the _just_pulled file as a list of labels.
@@ -1846,9 +2449,11 @@ class JustPulledFile(object):
         First clears the local memory, then reads the labels in the _just_pulled
         file into local memory, then returns that set as a sorted list.
         """
+        self.logger.info("Getting just_pulled labels from disk")
         self.labels.clear()
         try:
             line_no = 0
+            temp = set()
             with open(self.file_name) as fd:
                 for line in fd:
                     line_no += 1
@@ -1860,7 +2465,9 @@ class JustPulledFile(object):
                     except GiveUp as e:
                         raise GiveUp('Error reading line %d of %s:\n%s'%(line_no,
                             self.file_name, e))
-                    self.labels.add(label)
+                    temp.add(label)
+                self.logger.debug("Read just_pulled: %s" % temp)
+                self.labels |= temp
 
             return sorted(self.labels)
         except IOError as e:
@@ -1875,7 +2482,12 @@ class JustPulledFile(object):
 
         If the _just_pulled files does not exist, does nothing
         """
+        self.logger.debug("Clearing just_pulled set")
         self.labels.clear()
+        if len(self.labels):
+            raise MuddleBug("Clearing failed")
+        for label in self.labels:
+            raise MuddleBug("Clearing failed and len is broken")
         if os.path.exists(self.file_name):
             with open(self.file_name, 'w') as fd:
                 pass
@@ -1886,7 +2498,9 @@ class JustPulledFile(object):
         The label is not added to the _just_pulled file until commit() is
         called.
         """
-        self.labels.add(label.copy_with_tag(utils.LabelTag.CheckedOut))
+        label = label.copy_with_tag(utils.LabelTag.CheckedOut)
+        self.logger.debug("Adding %s to just_pulled set" % label)
+        self.labels.add(label)
 
     def is_pulled(self, label):
         l = label.copy_with_tag(utils.LabelTag.CheckedOut)
@@ -1899,9 +2513,11 @@ class JustPulledFile(object):
 
         Leaves the local memory intact after writing (it does not clear it).
         """
+        self.logger.info("Committing just_pulled labels to disk")
         with open(self.file_name, 'w') as fd:
             for label in sorted(self.labels):
                 ##print 'XXX %s'%label
+                self.logger.debug("    committing %s" % label)
                 fd.write('%s\n'%label)
 
 # End file

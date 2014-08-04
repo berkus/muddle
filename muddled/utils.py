@@ -26,6 +26,8 @@ from collections import MutableMapping, Mapping, namedtuple
 from fnmatch import fnmatchcase
 from ConfigParser import RawConfigParser
 from StringIO import StringIO
+import cPickle
+import muddled
 
 try:
     import curses
@@ -207,10 +209,51 @@ for key, value in DirTypeDict.items():
 
 DirType = __directory_type_type(**DirTypeDict)
 
-# Previously based on directory structure, now that a database is
-# being used consistency is required for separators across different systems.
-def label_part_join(*args):
-    return '/'.join(args)
+FNULL = open(os.devnull, 'w')
+
+def get_parent_dir(this_file=None):
+    """Determine the path of our parent directory.
+
+    If 'this_file' is not given, then we'll return the parent directory
+    of this file...
+    """
+    if this_file is None:
+        this_file = __file__
+    this_file = os.path.abspath(this_file)
+    this_dir = os.path.split(this_file)[0]
+    parent_dir = os.path.split(this_dir)[0]
+    return parent_dir
+
+MUDDLE_BINARY_DIR = os.path.abspath(get_parent_dir(__file__))
+MUDDLE_BINARY = os.path.join(MUDDLE_BINARY_DIR, 'muddle')
+
+
+
+# TODO replace usage of this in tests with just creating Label objects
+tag_reg = re.compile("(?:(.*)-)?(.*)")
+def label_part_join(type, name, tag):
+    role, tag = tag_reg.match(tag).groups()
+    return muddled.depend.Label(type, name, role, tag)
+
+_domain_rel_path_reg = re.compile("(?:/domains/([^/]*))")
+
+def domain_rel_path_to_parenth(domain):
+    try:
+        list = _domain_rel_path_reg.findall(domain)
+        if not list:
+            # The relative path is to the root directory
+            # (or possibly malformed so no domains are found)
+
+            return None
+        dom_parenth=list[-1]
+        list=list[:-1]
+        while list:
+            dom_parenth = "%s(%s)" % (list[-1], dom_parenth)
+            list = list[:-1]
+        return dom_parenth
+    except:
+        print domain
+        raise
 
 def string_cmp(a,b):
     """
@@ -2205,5 +2248,85 @@ class Choice(object):
             raise GiveUp('Given\n'
                          '  %s\n'
                          'and OS %r, cannot find a match'%(self, version_name))
+
+
+def run_sync_muddle(args, builder, env=None, show_command=True, show_output=True, input=None, input_by_stdin=True, root=False):
+    """Runs a muddle process with arguments in the list args and blocks until it completes.
+
+    If root is True then it is necessary to be the master process and will use sudo to perform the operation
+    """
+
+    #TODO: find a nicer way to get password input cleanly than pausing all other processes
+    if root:
+        if not builder.db.is_master():
+            raise MuddleBug("attempted to run %s with input %s with root whilst not being the "
+                            "master process" % (args,input))
+        builder.db.request_pause_others()
+        while not builder.db.are_others_paused():
+            builder.db.request_pause_others()
+            time.sleep(0.2)
+
+    proc = run_async_muddle(args, env, show_command, show_output, input, root)
+
+    proc.wait()
+    if root:
+        builder.db.release_pause_request()
+    return proc.returncode
+
+def run_async_muddle(args, env=None, show_command=True, show_output=True, input=None, input_by_stdin=True, root=False):
+    """Run a muddle process with arguments in the list args
+
+    Returns an os.popen object for the process started.
+
+    Input is pickled and sent over stdin if it is not None.
+    """
+
+    if root and input_by_stdin and input is not None:
+        raise MuddleBug("attempted to use sudo and give pickled input on stdin. args: %s input: %s" % (args,input))
+    # sudo needs a password entered at stdin
+
+    args = _rationalise_cmd(args)
+    if env is None: # so, for instance, an empty dictionary is allowed
+        env = os.environ
+
+    cmd_seq = [MUDDLE_BINARY] + args
+
+    if root:
+        cmd_seq = ['sudo']+cmd_seq
+
+    if input is not None and not input_by_stdin:
+        cmd_seq.append(cPickle.dumps(input))
+
+    if show_command:
+        sys.stdout.write('> %s\n'%_stringify_cmd(cmd_seq))
+        sys.stdout.flush()
+    if show_output:
+        stdout=stderr=None
+    else:
+        stdout=stderr=FNULL
+
+    if root:
+        stdin=None
+        # inherits stdin for password entry purposes (which fails if this
+        # is already in a subprocess and doesn't have the main stdin as its input)
+    elif input is None or not input_by_stdin:
+        stdin=FNULL
+    else:
+        stdin=subprocess.PIPE
+
+    # opens up a new terminal and runs muddle in it, only remaining open if an error code occurs
+    # only present for debugging purposes
+    # errors occur in the test scripts if the terminal command opens a non-child process as the proper
+    # terminal with the launch script returning immediately as the main build can delete the database while
+    # the subprocess is still loading the build description.
+    cmd_seq = ["xterm", "-e", "bash -c '"
+                    "if ! %s; then read -p \"\n\ndone\"; fi'  " % (" ".join(cmd_seq))]
+
+    proc = subprocess.Popen(cmd_seq, env=env, stdout=stdout, stderr=stderr, stdin=stdin)
+
+    if input is not None and input_by_stdin:
+        cPickle.dump(input, proc.stdin)
+
+    return proc
 
 # End file.

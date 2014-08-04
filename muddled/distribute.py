@@ -29,7 +29,7 @@ Actions and mechanisms relating to distributing build trees
 
 import os
 from fnmatch import fnmatchcase
-from muddled import utils
+import logging
 
 from muddled.depend import Action, Rule, Label, needed_to_build
 from muddled.utils import GiveUp, MuddleBug, LabelTag, LabelType, \
@@ -46,7 +46,8 @@ from muddled.licenses import get_gpl_checkouts, get_implicit_gpl_checkouts, \
 from muddled.withdir import Directory
 import muddled.db as db
 
-DEBUG=False
+logger = logging.getLogger('muddled.distribute')
+
 VERBOSE=False       # should copy_without be quiet
 
 # Distribution names, with the license categories they distribute something
@@ -274,7 +275,7 @@ def _distribute_checkout(builder, actual_names, label, copy_vcs=False):
     source_label = label.copy_with_tag(LabelTag.CheckedOut)
     target_label = label.copy_with_tag(LabelTag.Distributed, transient=True)
 
-    if DEBUG: print '   target', target_label
+    logger.debug('   target', target_label)
 
     # Making our target label transient means that its tag will not be
     # written out to the muddle database (i.e., .muddle/tags/...) when
@@ -285,11 +286,11 @@ def _distribute_checkout(builder, actual_names, label, copy_vcs=False):
         # Yes, so retrieve it, and its action
         rule = builder.ruleset.map[target_label]
         action = rule.action
-        if DEBUG: print '   %s exists'%action
+        logger.debug('   %s exists'%action)
         # but don't *do* anything to that first action yet
     else:
         # No - we need to create one
-        if DEBUG: print '   adding %s anew'%actual_names[0]
+        logger.debug('   adding %s anew'%actual_names[0])
         action = DistributeCheckout(actual_names[0], copy_vcs)
 
         rule = Rule(target_label, action)   # to build target_label, run action
@@ -302,7 +303,7 @@ def _distribute_checkout(builder, actual_names, label, copy_vcs=False):
 
     # Add the other distributions to the same action
     for name in actual_names:
-        if DEBUG: print '   %s exists: add/replace %s'%(action, name)
+        logger.debug('   %s exists: add/replace %s'%(action, name))
         # NB: This call should work whether the existing Action is a
         #     DistributeCheckout or DistributeBuildDescription
         if action.does_distribution(name):
@@ -357,14 +358,14 @@ def distribute_checkout(builder, name, label, copy_vcs=False):
         1. If we already described a distribution called 'name' for a given
            checkout label, then this will silently overwrite it.
     """
-    if DEBUG: print '.. distribute_checkout(builder, %r, %s, %s)'%(name, label, copy_vcs)
+    logger.debug('.. distribute_checkout(builder, %r, %s, %s)'%(name, label, copy_vcs))
 
     actual_names = _filter(the_distributions.keys(), name)
     if not actual_names:
         raise GiveUp('There is no distribution matching "%s"'%name)
 
     if label.type == LabelType.Package:
-        packages = builder.expand_wildcards(label)
+        packages = builder.ruleset.expand_wildcards(label)
         for package in packages:
             checkouts = builder.checkouts_for_package(package)
             for co_label in checkouts:
@@ -414,7 +415,7 @@ def distribute_checkout_files(builder, name, label, source_files):
            the 'copy_vcs' choice by trying to specify the VCS directory as
            an extra source path...
     """
-    if DEBUG: print '.. distribute_checkout_files(builder, %r, %s, %s)'%(name, label, source_files)
+    logger.debug('.. distribute_checkout_files(builder, %r, %s, %s)'%(name, label, source_files))
     if label.type != LabelType.Checkout:
         raise GiveUp('distribute_checout_files() takes a checkout label, not %s'%label)
 
@@ -428,7 +429,7 @@ def distribute_checkout_files(builder, name, label, source_files):
     source_label = label.copy_with_tag(LabelTag.CheckedOut)
     target_label = label.copy_with_tag(LabelTag.Distributed, transient=True)
 
-    if DEBUG: print '   target', target_label
+    logger.debug('   target', target_label)
 
     # Making our target label transient means that its tag will not be
     # written out to the muddle database (i.e., .muddle/tags/...) when
@@ -439,11 +440,11 @@ def distribute_checkout_files(builder, name, label, source_files):
         # Yes, so retrieve it, and its action
         rule = builder.ruleset.map[target_label]
         action = rule.action
-        if DEBUG: print '   %s exists'%action
+        logger.debug('   %s exists'%action)
         # but don't *do* anything to that first action yet
     else:
         # No - we need to create one
-        if DEBUG: print '   adding %s anew'%actual_names[0]
+        logger.debug('   adding %s anew'%actual_names[0])
         # We don't want to copy VCS, as we're not copying all of the
         # checkout (and VCS contains information about the other files!)
         action = DistributeCheckout(actual_names[0], False, source_files)
@@ -459,7 +460,7 @@ def distribute_checkout_files(builder, name, label, source_files):
     # Add the other distributions to the same action
     for name in actual_names:
         # Yes - add this distribution to it (if it's not there already)
-        if DEBUG: print '   %s exists: add/replace %s'%(action, name)
+        logger.debug('   %s exists: add/replace %s'%(action, name))
         if action.does_distribution(name):
             # If we're already copying all the source files, we don't need to do
             # anything. Otherwise...
@@ -514,7 +515,7 @@ def distribute_build_desc(builder, name, label, copy_vcs=False):
     Also, 'copy_vcs' will be ignored in this situation, and any VCS data
     will not be copied.
     """
-    if DEBUG: print '.. distribute_build_desc(builder, %r, %s, %s)'%(name, label, copy_vcs)
+    logger.debug('.. distribute_build_desc(builder, %r, %s, %s)'%(name, label, copy_vcs))
     if label.type != LabelType.Checkout:
         # This is a MuddleBug because we shouldn't be called directly by the
         # user, so it's muddle infrastructure that got it wrong
@@ -559,7 +560,7 @@ def distribute_build_desc(builder, name, label, copy_vcs=False):
     source_label = label.copy_with_tag(LabelTag.CheckedOut)
     target_label = label.copy_with_tag(LabelTag.Distributed, transient=True)
 
-    if DEBUG: print '   target', target_label
+    logger.debug('   target', target_label)
 
     # Making our target label transient means that its tag will not be
     # written out to the muddle database (i.e., .muddle/tags/...) when
@@ -571,7 +572,7 @@ def distribute_build_desc(builder, name, label, copy_vcs=False):
         rule = builder.ruleset.map[target_label]
         action = rule.action
         if isinstance(action, DistributeBuildDescription):
-            if DEBUG: print '   exists as DistributeBuildDescription: add/override'
+            logger.debug('   exists as DistributeBuildDescription: add/override')
             # It's the right sort of thing
             if action.does_distribution(name):
                 # If the action already know about this distribution, just
@@ -583,7 +584,7 @@ def distribute_build_desc(builder, name, label, copy_vcs=False):
                 # Otherwise, it's simple to add it
                 action.add_distribution(name, copy_vcs, replacement_build_desc)
         elif isinstance(action, DistributeCheckout):
-            if DEBUG: print '   exists as DistributeCheckout: replace'
+            logger.debug('   exists as DistributeCheckout: replace')
             # Ah, it's a generic checkout action - let's replace it with
             # a build description action
             new_action = DistributeBuildDescription(name, copy_vcs,
@@ -596,7 +597,7 @@ def distribute_build_desc(builder, name, label, copy_vcs=False):
             raise GiveUp('Found unexpected action %s on build description rule'%action)
     else:
         # No - we need to create one
-        if DEBUG: print '   adding anew'
+        logger.debug('   adding anew')
         action = DistributeBuildDescription(name, copy_vcs,
                                             replacement_build_desc=replacement_build_desc)
 
@@ -632,7 +633,7 @@ def set_private_build_files(builder, name, private_files):
     The dummy files will also containg such a function, but its body will be
     ``pass``.
     """
-    if DEBUG: print '.. set_private_build_files(builder, %r, %s)'%(name, private_files)
+    logger.debug('.. set_private_build_files(builder, %r, %s)'%(name, private_files))
 
     actual_names = _filter(the_distributions.keys(), name)
     if not actual_names:
@@ -658,7 +659,7 @@ def set_private_build_files(builder, name, private_files):
     source_label = label.copy_with_tag(LabelTag.CheckedOut)
     target_label = label.copy_with_tag(LabelTag.Distributed, transient=True)
 
-    if DEBUG: print '   target', target_label
+    logger.debug('   target', target_label)
 
     # Making our target label transient means that its tag will not be
     # written out to the muddle database (i.e., .muddle/tags/...) when
@@ -671,14 +672,14 @@ def set_private_build_files(builder, name, private_files):
         rule = builder.ruleset.map[target_label]
         action = rule.action
         if isinstance(action, DistributeBuildDescription):
-            if DEBUG: print '   exists as DistributeBuildDescrption: add/override'
+            logger.debug('   exists as DistributeBuildDescrption: add/override')
             # It's the right sort of thing - just add these private files
             if action.does_distribution(name):
                 action.add_private_files(name, private_files)
             else:
                 action.add_distribution(name, None, private_files)
         elif isinstance(action, DistributeCheckout):
-            if DEBUG: print '   exists as DistributeCheckout: replace'
+            logger.debug('   exists as DistributeCheckout: replace')
             # Ah, it's a generic checkout action - let's replace it with
             # a new build description action
             old_action = action
@@ -692,7 +693,7 @@ def set_private_build_files(builder, name, private_files):
             raise GiveUp('Found unexpected action %s on build description rule'%action)
     else:
         # No - we need to create one
-        if DEBUG: print '   adding anew'
+        logger.debug('   adding anew')
         # We have to guess at 'copy_vcs', but someone later on can override us
         action = DistributeBuildDescription(name, None, private_files)
 
@@ -703,7 +704,7 @@ def set_private_build_files(builder, name, private_files):
 
     # Sort out the other distribution names
     for name in actual_names[1:]:
-        if DEBUG: print '   %s exists: add/override %s'%(action, name)
+        logger.debug('   %s exists: add/override %s'%(action, name))
         action.add_private_files(name, private_files)
 
 def distribute_package(builder, name, label, obj=False, install=True,
@@ -755,7 +756,8 @@ def distribute_package(builder, name, label, obj=False, install=True,
         2. If we already described a distribution called 'name' for 'label',
            then this will silently overwrite it.
     """
-    if DEBUG: print '.. distribute_package(builder, %r, %s, obj=%s, install=%s, with_muddle_makefile=%s)'%(name, label, obj, install, with_muddle_makefile)
+    logger.debug('.. distribute_package(builder, %r, %s, obj=%s, install=%s, with_muddle_makefile=%s)'
+                 % (name, label, obj, install, with_muddle_makefile))
     if label.type != LabelType.Package:
         raise GiveUp('distribute_package() takes a package label, not %s'%label)
 
@@ -763,19 +765,19 @@ def distribute_package(builder, name, label, obj=False, install=True,
     if not actual_names:
         raise GiveUp('There is no distribution matching "%s"'%name)
 
-    packages = builder.expand_wildcards(label)
+    packages = builder.ruleset.expand_wildcards(label)
     if len(packages) == 0:
         raise GiveUp('distribute_package() of %s does not distribute anything'
                      ' (no matching package labels)'%label)
 
-    if DEBUG and len(packages) > 1:
-        print '.. => %s'%(', '.join(map(str, packages)))
+    if len(packages) > 1:
+        logger.debug('.. => %s'%(', '.join(map(str, packages))))
 
     for pkg_label in packages:
         source_label = pkg_label.copy_with_tag(LabelTag.PostInstalled)
         target_label = pkg_label.copy_with_tag(LabelTag.Distributed, transient=True)
 
-        if DEBUG: print '   target', target_label
+        logger.debug('   target', target_label)
 
         # Making our target label transient means that its tag will not be
         # written out to the muddle database (i.e., .muddle/tags/...) when
@@ -786,11 +788,11 @@ def distribute_package(builder, name, label, obj=False, install=True,
             # Yes, so retrieve it, and its action
             rule = builder.ruleset.map[target_label]
             action = rule.action
-            if DEBUG: print '   %s exists'%action
+            logger.debug('   %s exists'%action)
             add_index = 0
         else:
             # No - we need to create one
-            if DEBUG: print '   adding %s anew'%actual_names[0]
+            logger.debug('   adding %s anew'%actual_names[0])
             action = DistributePackage(actual_names[0], obj, install)
 
             rule = Rule(target_label, action)   # to build target_label, run action
@@ -803,7 +805,7 @@ def distribute_package(builder, name, label, obj=False, install=True,
 
         # Add the other distributions to the same action
         for name in actual_names[add_index:]:
-            if DEBUG: print '   %s exists: add/set %s'%(action, name)
+            logger.debug('   %s exists: add/set %s'%(action, name))
             action.add_or_set_distribution(name, obj, install)
 
         if with_muddle_makefile:
@@ -838,22 +840,14 @@ def _set_checkout_tags(builder, label, target_root):
     """Copy checkout muddle tags
     """
     root_path = normalise_dir(builder.db.root_path)
-    local_root = find_local_relative_root(builder, label)
+    target_root = normalise_dir(target_root)
 
-    src_dir = os.path.join(root_path, local_root)
-    tgt_dir = os.path.join(target_root, local_root)
-    tgt_dir = os.path.normpath(tgt_dir)
+    db_label = Label('checkout', label.name)
 
-    db_label_start = utils.label_part_join('checkout',label.name)
+    logger.debug('..copying %s, %s' % (root_path, db_label))
+    logger.debug('       to %s, %s' % (target_root, db_label))
 
-    if DEBUG:
-        print '..copying %s, %s' % (src_dir, db_label_start)
-        print '       to %s, %s' % (tgt_dir, db_label_start)
-
-    db_src = db.Database(src_dir)
-    db_target = db.Database(tgt_dir)
-
-    db.copy_tags(db_src, db_target, db_label_start)
+    db.copy_tags(root_path, target_root, db_label)
 
 
 def _set_package_tags(builder, label, target_root, which_tags):
@@ -873,18 +867,13 @@ def _set_package_tags(builder, label, target_root, which_tags):
     # and only tags up to having built our obj/ hierarchy
 
     def input_tag_to_db_label(itag):
-        tag_leaf = '%s-%s'%(label.role, itag)
-        return utils.label_part_join('package', label.name, tag_leaf)
+        return Label('package', label.name, label.role, itag)
 
     tags = map(input_tag_to_db_label, which_tags)
 
-    db_src = db.Database(src_dir)
-    db_target = db.Database(tgt_dir)
-    db.copy_tags_with(db_src,db_target, tags)
-
-    if DEBUG:
-        print '..copying %s, package/%s/%s-*' % src_dir,label.name, label.role
-        print '       to %s, package/%s/%s-*'%tgt_dir,label.name, label.role
+    db.copy_tags_with(src_dir,tgt_dir, tags)
+    logger.debug('..copying %s, package/%s/%s-*' % (src_dir, label.name, label.role))
+    logger.debug('       to %s, package/%s/%s-*' % (tgt_dir, label.name, label.role))
 
 
 
@@ -899,10 +888,9 @@ def _actually_distribute_some_checkout_files(builder, label, target_dir, files):
     co_src_rel_to_root = builder.db.get_checkout_location(label)
     co_tgt_dir = os.path.join(normalise_dir(target_dir), co_src_rel_to_root)
     co_tgt_dir = os.path.normpath(co_tgt_dir)
-    if DEBUG:
-        print 'Copying some files for checkout:'
-        print '  from %s'%co_src_dir
-        print '  to   %s'%co_tgt_dir
+    logger.debug('Copying some files for checkout:')
+    logger.debug('  from %s'%co_src_dir)
+    logger.debug('  to   %s'%co_tgt_dir)
 
     for file in files:
         actual_tgt_path = os.path.join(co_tgt_dir, file)
@@ -936,12 +924,11 @@ def _actually_distribute_checkout(builder, label, target_dir, copy_vcs):
     co_src_rel_to_root = builder.db.get_checkout_location(label)
     co_tgt_dir = os.path.join(normalise_dir(target_dir), co_src_rel_to_root)
     co_tgt_dir = os.path.normpath(co_tgt_dir)
-    if DEBUG:
-        print 'Copying checkout:'
-        print '  from %s'%co_src_dir
-        print '  to   %s'%co_tgt_dir
-        if without:
-            print '  without %s'%without
+    logger.debug('Copying checkout:')
+    logger.debug('  from %s'%co_src_dir)
+    logger.debug('  to   %s'%co_tgt_dir)
+    if without:
+        logger.debug('  without %s'%without)
     copy_without(co_src_dir, co_tgt_dir, without, preserve=True, verbose=VERBOSE)
 
     # We mustn't forget to set the appropriate tags in the target .muddle/
@@ -970,14 +957,13 @@ def _actually_distribute_normal_build_desc(builder, label, target_dir,
 
     co_src_rel_to_root = builder.db.get_checkout_location(label)
     co_tgt_dir = os.path.join(normalise_dir(target_dir), co_src_rel_to_root)
-    if DEBUG:
-        print 'Copying build description:'
-        print '  from %s'%co_src_dir
-        print '  to   %s'%co_tgt_dir
-        if files_to_ignore:
-            print '  without %s'%files_to_ignore
-        if private_files:
-            print '  private files %s'%private_files
+    logger.debug('Copying build description:')
+    logger.debug('  from %s'%co_src_dir)
+    logger.debug('  to   %s'%co_tgt_dir)
+    if files_to_ignore:
+        logger.debug('  without %s'%files_to_ignore)
+    if private_files:
+        logger.debug('  private files %s'%private_files)
 
     # Make all the private files (which may be paths within our checkout)
     # be paths relative to the root of the build tree
@@ -998,9 +984,9 @@ def _actually_distribute_normal_build_desc(builder, label, target_dir,
     with Directory(builder.db.root_path):
         for dirpath, dirnames, filenames in os.walk(co_src_rel_to_root):
 
-            if DEBUG: print '--', dirpath
+            logger.debug('--', dirpath)
             for name in filenames:
-                if DEBUG: print '--', name
+                logger.debug('--', name)
                 if name in files_to_ignore:           # Maybe ignore VCS files
                     continue
                 base, ext = os.path.splitext(name)
@@ -1013,12 +999,12 @@ def _actually_distribute_normal_build_desc(builder, label, target_dir,
                 if not os.path.exists(tgt_dir):
                     os.makedirs(tgt_dir)
 
-                if DEBUG: print '--', src_path
-                if DEBUG: print '--', tgt_dir
-                if DEBUG: print '--', tgt_path
+                logger.debug('--', src_path)
+                logger.debug('--', tgt_dir)
+                logger.debug('--', tgt_path)
 
                 if src_path in private_files:
-                    if DEBUG: print 'Replacing private file', src_path
+                    logger.debug('Replacing private file', src_path)
                     with open(tgt_path, 'w') as fd:
                         fd.write("def describe_private(builder, *args, **kwargs):\n    pass\n")
                 else:
@@ -1121,10 +1107,9 @@ def _actually_distribute_obj(builder, label, target_dir):
     tgt_obj_dir = os.path.join(target_dir, rel_obj_dir)
     tgt_obj_dir = normalise_dir(tgt_obj_dir)
 
-    if DEBUG:
-        print 'Copying binaries:'
-        print '    from %s'%obj_dir
-        print '    to   %s'%tgt_obj_dir
+    logger.debug('Copying binaries:')
+    logger.debug('    from %s'%obj_dir)
+    logger.debug('    to   %s'%tgt_obj_dir)
 
     copy_without(obj_dir, tgt_obj_dir, preserve=True, verbose=VERBOSE)
 
@@ -1168,9 +1153,8 @@ def _actually_distribute_install(builder, label, target_dir):
         # previous package has already copied its content (since the content
         # is per-role, not per-package)
         if not os.path.exists(tgt_install_dir):
-            if DEBUG:
-                print 'and from %s'%install_dir
-                print '      to %s'%tgt_install_dir
+            logger.debug('and from %s'%install_dir)
+            logger.debug('      to %s'%tgt_install_dir)
             copy_without(install_dir, tgt_install_dir, preserve=True, verbose=VERBOSE)
 
     # Set the appropriate package tags
@@ -1397,9 +1381,9 @@ class DistributeCheckout(DistributeAction):
 
         copy_vcs, just = self.distributions[name]
 
-        if DEBUG:
-            print 'DistributeCheckout %s (%s VCS) to %s'%(label,
-                    'without' if copy_vcs else 'with', target_dir)
+
+        logger.debug('DistributeCheckout %s (%s VCS) to %s'%(label,
+                'without' if copy_vcs else 'with', target_dir))
 
         if just is None:
             _actually_distribute_checkout(builder, label, target_dir, copy_vcs)
@@ -1520,9 +1504,8 @@ class DistributeBuildDescription(DistributeAction):
 
         copy_vcs, private_files, replacement_build_desc = self.distributions[name]
 
-        if DEBUG:
-            print 'DistributeBuildDescription %s (%s VCS) to %s'%(label,
-                    'without' if copy_vcs else 'with', target_dir)
+        logger.debug('DistributeBuildDescription %s (%s VCS) to %s'%(label,
+                'without' if copy_vcs else 'with', target_dir))
 
         _actually_distribute_build_desc(builder, label, target_dir, copy_vcs,
                                         private_files, replacement_build_desc)
@@ -1598,8 +1581,8 @@ class DistributePackage(DistributeAction):
 
         obj, install = self.distributions[name]
 
-        if DEBUG:
-            print 'DistributePackage %s to %s'%(label, target_dir)
+
+        logger.debug('DistributePackage %s to %s'%(label, target_dir))
 
         if obj:
             _actually_distribute_obj(builder, label, target_dir)
@@ -1657,13 +1640,13 @@ def _add_build_descriptions(builder, name, domains, copy_vcs=False):
                 d = _domain_from_parts(parts[:ii])
                 cumulative_domains.add(d)
 
-    if DEBUG: print 'Adding build descriptions'
+    logger.debug('Adding build descriptions')
     for domain in sort_domains(cumulative_domains):
         co_label = _build_desc_label_in_domain(builder, domain, LabelTag.Distributed)
-        if DEBUG: print '-- Build description', co_label
+        logger.debug('-- Build description', co_label)
         distribute_build_desc(builder, name, co_label, copy_vcs)
         extra_labels.append(co_label)
-    if DEBUG: print 'Done'
+    logger.debug('Done')
 
     return extra_labels
 
@@ -1702,7 +1685,7 @@ def _copy_muddle_skeleton(builder, name, target_dir, domains):
     tgt_root = target_dir
 
     for domain in sort_domains(domains):
-        if DEBUG: print '.muddle skeleton for domain:', domain
+        logger.debug('.muddle skeleton for domain:', domain)
 
         if not domain:
             src_dir = os.path.join(src_root, '.muddle')
@@ -1724,7 +1707,7 @@ def _copy_muddle_skeleton(builder, name, target_dir, domains):
             if os.path.exists(src_name):
                 copy_file(src_name, os.path.join(tgt_dir, name), preserve=True)
 
-    if DEBUG: print 'Done'
+    logger.debug('Done')
 
 def _copy_versions_dir(builder, name, target_dir, copy_vcs=False):
     """Copy the stamp versions directory
@@ -1735,7 +1718,7 @@ def _copy_versions_dir(builder, name, target_dir, copy_vcs=False):
     if not os.path.exists(src_dir):
         return
 
-    if DEBUG: print 'Copying versions/ directory'
+    logger.debug('Copying versions/ directory')
 
     tgt_root = target_dir
     tgt_dir = os.path.join(tgt_root, 'versions')
@@ -1749,12 +1732,11 @@ def _copy_versions_dir(builder, name, target_dir, copy_vcs=False):
         versions_repo_url = builder.db.VersionsRepository_pathfile.get()
         without = vcs_special_files(versions_repo_url)
 
-    if DEBUG:
-        print 'Copying versions/ directory:'
-        print '  from %s'%src_dir
-        print '  to   %s'%tgt_dir
-        if without:
-            print '  without %s'%without
+    logger.debug('Copying versions/ directory:')
+    logger.debug('  from %s'%src_dir)
+    logger.debug('  to   %s'%tgt_dir)
+    if without:
+        logger.debug('  without %s'%without)
 
     copy_without(src_dir, tgt_dir, without, preserve=True, verbose=VERBOSE)
 

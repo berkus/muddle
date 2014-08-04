@@ -10,6 +10,7 @@ import os
 import sys
 import imp
 import pydoc
+import logging
 
 from inspect import getmembers, isfunction, isclass, ismethod, ismodule, \
         isgenerator, getargspec, formatargspec, getmro, getdoc, getmodule, \
@@ -20,6 +21,7 @@ import utils
 from muddled.utils import GiveUp, page_text
 from muddled.withdir import Directory
 
+logger = logging.getLogger('muddled.docreport')
 
 class HashThing(object):
 
@@ -83,7 +85,6 @@ class HashThing(object):
                     lines.append('  %-15s %s'%(what, name))
         return lines
 
-DEBUG = False
 
 def dissect(thing_name, thing, hash):
     for name, value in getmembers(thing):
@@ -94,16 +95,16 @@ def dissect(thing_name, thing, hash):
         if name.startswith('__') and name.endswith('__'):
             continue
         elif isfunction(value):
-            if DEBUG: print '   .. function', this_name
+            logger.debug('   .. function', this_name)
             hash.add(this_name, value)
         elif ismethod(value):
-            if DEBUG: print '   .. method', this_name
+            logger.debug('   .. method', this_name)
             hash.add(this_name, value)
         elif isgenerator(value):
-            if DEBUG: print '   .. generator', this_name
+            logger.debug('   .. generator', this_name)
             hash.add(this_name, value)
         elif isclass(value):
-            if DEBUG: print '   .. class', this_name
+            logger.debug('   .. class', this_name)
             hash.add(this_name, value)
             dissect(this_name, value, hash)
 
@@ -135,22 +136,22 @@ def determine():
     hash = HashThing()
     for dirpath, dirnames, filenames in os.walk('muddled'):
 
-        if DEBUG: print
-        if DEBUG: print '%d directories in %s'%(len(dirnames), dirpath)
+        logger.debug("")
+        logger.debug('%d directories in %s'%(len(dirnames), dirpath))
         for dirname in dirnames:
             if os.path.exists(os.path.join(dirpath, dirname, '__init__.py')):
                 parts = dirpath.split(os.sep)
                 module_name = '.'.join(parts) + '.' + dirname
                 module_path = os.path.join(dirpath, dirname)
-                if DEBUG: print '---', module_name, 'from', module_path
+                logger.debug('---', module_name, 'from', module_path)
                 # This works, but relies on module_name being in our path...
                 module = pydoc.locate(module_name, forceload=1)
-                if DEBUG: print '   ', module_name, ':', module
+                logger.debug('   ', module_name, ':', module)
                 hash.add(module_name, module)
                 dissect(module_name, module, hash)
 
-        if DEBUG: print
-        if DEBUG: print '%d files in %s'%(len(filenames), dirpath)
+        logger.debug("")
+        logger.debug('%d files in %s'%(len(filenames), dirpath))
         for filename in filenames:
             name, ext = os.path.splitext(filename)
             if ext == '.py':
@@ -162,10 +163,10 @@ def determine():
                 module_name = '.'.join(parts) + '.' + name
                 module_path = os.path.join(dirpath, filename)
 
-                if DEBUG: print '---', module_name, 'from', module_path
+                logger.debug('---', module_name, 'from', module_path)
                 module = pydoc.importfile(module_path)
 
-                if DEBUG: print '   ', module_name, ':', module
+                logger.debug('   ', module_name, ':', module)
                 hash.add(module_name, module)
                 dissect(module_name, module, hash)
 

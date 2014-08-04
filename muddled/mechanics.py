@@ -2,13 +2,14 @@
 Contains the mechanics of muddle.
 """
 
+
 import os
 import re
 import sys
 import traceback
-import multiprocessing
-import multiprocessing.pool
 import time
+import cPickle
+import logging
 
 import muddled.db as db
 import muddled.depend as depend
@@ -23,6 +24,9 @@ from muddled.repository import Repository
 from muddled.utils import split_vcs_url, sort_domains
 from muddled.version_control import checkout_from_repo
 from muddled.version_stamp import ReleaseSpec
+
+logger = logging.getLogger("muddled.mechanics")
+# logger.setLevel(logging.INFO)
 
 class ErrorInBuildDescription(GiveUp):
     """We want to be able to distinguish this exception *in this module*
@@ -170,6 +174,9 @@ class Builder(object):
         # the build description? This is ignored if a checkout already
         # (explicitly) specifies its own branch or revision.
         self._follow_build_desc_branch = False
+
+        self.num_procs = 4
+        self.building = False
 
     @property
     def build_desc_repo(self):
@@ -350,8 +357,41 @@ class Builder(object):
         self.ruleset.add(depend.depend_one(loader, loaded, checked_out))
 
         # .. and load the build description.
+
+        # assumes that the checkout is of a reasonable form, specifically that the
+        # checked_out label has no dependencies so it can be built directly. This is
+        # done to facilitate running another muddle instance to parallelise a build
+        # so the database is already filled with rules that assume a build description
+        # has been loaded
+        if not self.db.is_tag_done(checked_out):
+            db_rule = self.db.get_rule_for_label(checked_out)
+            if db_rule:
+                if self.db.set_rule_processing(db_rule):
+                    self._build_target(db_rule, False)
+                    self.db.set_rule_done(db_rule)
+                    if not self.db.is_tag_done(checked_out):
+                        raise MuddleBug("Build desc. checked out but tag not set!")
+                else:
+                    print "waiting for other process to load build description"
+                    # Hopefully this situation won't be common, the build description will usually be checked out
+                    while not self.db.is_tag_done(checked_out):
+                        time.sleep(.07)
+            else:
+                checked_out_rule = self.ruleset.rule_for_target(checked_out)
+                self._build_target(checked_out_rule, False)
+                self.db.set_tag(checked_out)
+                # db isn't setup so there is no rule to update as done and no dependency tree to tell if
+                # all off the matching rules are satisfied
+
+        if not self.db.is_tag_done(checked_out):
+            raise MuddleBug("Build desc. not checked out!")
+
+
         try:
-            self.build_label(loaded, silent=True)
+            # Known to be transient and it is assumed that running the build
+            # description multiple times simultaneously won't cause problems.
+            self._build_target(self.ruleset.rule_for_target(loaded), False)
+            self.db.set_tag(loaded)
         except ErrorInBuildDescription as e:
             # Ah, an error in a subdomain build description
             raise ErrorInBuildDescription('Error in build description for %s\n'
@@ -718,65 +758,207 @@ class Builder(object):
         # Add anything the rest of the system has put in.
         self.setup_environment(label, os.environ)
 
-    def build_label(self, label, silent=False):
+    def build_label(self, label, silent=False, master=False):
         """
         The fundamental operation of a builder - build this label.
         """
+        self.build_labels([label], silent, master)
 
-        self.build_label_with_options(label, useDepends=True, useTags=True, silent=silent)
-
-    def build_label_with_options(self, label, useDepends = True, useTags = True, silent = False):
+    def build_labels(self, labels, silent=False, master=False):
         """
-        The fundamental operation of a builder - build this label.
-
-        * useDepends - Use dependencies?
+        The fundamental operation of a builder - build these labels.
         """
+        if self.building:
+            raise MuddleBug("unexpected recursive building")
+        self.building = True
 
-        if useDepends:
-            rule_list = depend.needed_to_build(self.ruleset, label, useTags = useTags,
-                                               useMatch = True)
+        self.db.register_process()
+
+        if len(labels) == 1:
+            print "Building %s" % labels[0]
         else:
-            rule_list = self.ruleset.rules_for_target(label, useTags = useTags,
-                                                                 useMatch = True)
+            print "Building %d labels" % len(labels)
 
-        if not rule_list:
-            print "There is no rule to build label %s"%label
-            return
+        try:
 
-        for r in rule_list:
-            # Build it.
-            if not self.db.is_tag_done(r.target):
-                if self.db.set_tag_processing(r.target):
-                    if (not silent):
-                        print "> Building %s" % r.target
-                    apply(self._build_target,(r,os.environ.copy(),silent))
-                else:
-                    pass
-                    raise GiveUp("Single threaded and some tag already in progress. Label of %s, rule target of %s."
-                                 % (str(self.db.label_to_dom_tag(label)),str(self.db.label_to_dom_tag(r.target))))
+            # Creating the set from ruleset.targets_match is necessary as the target may be transitient in
+            # the ruleset but passed as non-transient, resulting in the completed transient tag not being
+            # found.
+            label_set = set()
+            for label in labels:
+                label_set.update(self.ruleset.targets_match(label, useMatch=True))
+            logger.info("building %s, master %s" % (labels, master))
 
-        built = False
-        while not built:
-            built = True
-            for r in rule_list:
-                if not self.db.is_tag_done(r.target):
-                    built = False
-                    raise GiveUp("Single threaded and some dependencies not built. Label of %s, rule target of %s."
-                                 % (str(self.db.label_to_dom_tag(label)),str(self.db.label_to_dom_tag(r.target))))
+            if not self.db.other_processes_exist():
+                self.db.clear_rules()
+            else:
+                logger.info("  other processes already running!")
+            self.db.set_rules(self.ruleset, label_set)
+            sys.stdout.flush()
+            processes = []
 
-            time.sleep(0.05)
+            if master:
+                self.db.attempt_set_master()
+                if not self.db.is_master():
+                    raise MuddleBug("Attempted to run as main muddle when one is already running.")
 
-    def _build_target(self, r, old_env,silent):
+                self.build_labels_from_db(silent, label_set, allow_master=True, req_master=True)
+
+                logger.info("running with %s processes" % self.num_procs)
+                for i in range(self.num_procs-1):
+                    logger.info("Spawning proc from %s" % os.getpid())
+
+                    proc = utils.run_async_muddle(["_sub_builder_db"], input_by_stdin=False, show_command=False)
+                    processes.append(proc)
+
+            self.build_labels_from_db(silent, label_set, allow_master=master)
+
+            for proc in processes:
+                proc.wait()
+
+            while self.db.other_processes_exist():
+                time.sleep(.3)
+        finally:
+            self.db.deregister_process()
+            self.building = False
+            # self.db.clear_rules()
+
+    def build_labels_from_db(self, silent, targets=None, allow_master=False, req_master=False):
+        """
+        Builds labels taking rules and state from the database.
+
+        This method relies on set_rules having been called earlier by some process.
+
+        allow_master sets whether methods requiring that they are the main muddle instance can
+        be executed, mostly caused by requiring sudo so a password must be entered.
+
+        req_master is used to require that all processed methods require to be run in the main
+        muddle instance, used to run as many potentially root requiring actions at the beginning
+        of a build rather then needing requiring the user to check the progress regularly.
+        """
+        logger.info("starting db build labels with master: %s" % allow_master)
+        if targets and not req_master:
+            use_targets=True
+        else:
+            use_targets = False
+
+        while True:
+            rule = self.db.get_satisfied_rule(allow_master, req_master)
+            if use_targets:
+                targets = [targ for targ in targets if not self.db.is_tag_done(targ)]
+                if not targets:
+                    break
+
+            if not rule and not use_targets:
+                logger.info("Ran out of qualifying targets")
+                break
+
+            self._pause_if_requested()
+
+            if not rule and use_targets and targets:
+                # targets unbuilt, there may be many rules that depend on the rules currently being processed
+                # so wait for a while to reduce the frequency of db access then try again
+                time.sleep(0.3)
+                logger.info("  Waiting with targets %s" % targets)
+                continue
+
+            if self.db.is_rule_done(rule):
+                # raise MuddleBug("Rule %s is already done but returned from get_satisfied_rule" % rule)
+                logger.info("Rule %s is already done but returned from get_satisfied_rule" % rule)
+                continue
+            if self.db.is_tag_done(rule.target):
+                logger.info(" transient tag/rule problems")
+                logger.info("  trans. tags: %s" % self.db.local_tags)
+                logger.info("  trans. rules: %s" % ", ".join(str(rule) for rule in self.db.local_rules))
+                # raise MuddleBug("Tag %s is already done but rule returned from get_satisfied_rule" % rule.target)
+                logger.info("  Tag %s is already done but rule returned from get_satisfied_rule" % rule.target)
+                continue
+
+            if self.db.set_rule_processing(rule):
+                logger.info("Starting building rule %s" % rule)
+                self._build_target(rule, silent=silent)
+                self.db.set_rule_done(rule)
+
+        logger.info("Stopped db build labels with master: %s" % allow_master)
+
+    def _pause_if_requested(self):
+        if self.db.is_pause_requested():
+            self.db.pause()
+            while self.db.is_pause_requested():
+                time.sleep(0.1)
+            self.db.unpause()
+
+    def build_labels_from_rule_list(self, rule_list, silent = False):
+
+        master = self.db.is_master()
+
+        free_rules = [r for r in rule_list if self.db.is_tag_clear(r.target)
+                      and (master or not r.action or not r.action.requires_master())]
+
+        while len(free_rules)>0:
+            acted=False
+            for r in free_rules:
+                if self.db.is_pause_requested():
+                    print "pause requested!"
+                    self.db.pause()
+                    while self.db.is_pause_requested():
+                        time.sleep(.5)
+                    self.db.unpause()
+                # Build it.
+                if self.db.is_tag_clear(r.target):
+                    deps_satisfied = True
+                    for dep in r.deps:
+                        if not self.db.is_tag_done(dep):
+                            deps_satisfied = False
+                    if deps_satisfied and self.db.set_tag_processing(r.target):
+                        if (not silent):
+                            print "> Building %s" % r.target
+                        if r.action and r.action.requires_master() and not master:
+                            raise MuddleBug("%s requires master and this is not master, should have been filtered earlier" % r.action)
+                        if r.action and r.action.requires_master():
+                            print "master required and available: %s" % r.action
+
+                        self._build_target(r, silent)
+                        self.db.set_rule_done(r)
+
+                        acted = True
+                    else:
+                        pass
+            free_rules = [r for r in free_rules if self.db.is_tag_clear(r.target)]
+            if not acted:
+                time.sleep(0.3)
+            # print "looping rule list %s" % os.getpid()
+            # print "rule list:"
+            # for r in rule_list:
+            #     print "    %s" % r.target
+            #     for dep in r.deps:
+            #         print "        %s" % dep
+            #     pass
+            # print "free rules:"
+            # for r in free_rules:
+            #     print "    %s" % r.target
+            #     for dep in r.deps:
+            #         print "        %s" % dep
+            #     pass
+
+    def _build_target(self, r, silent=False):
+
+        old_env = os.environ.copy()
+
+        logger.debug("!!Building %s" % r)
         # Set up the environment for building this label
         try:
             self._build_label_env(r.target, env_store)
 
             if r.action:
                 r.action.build_label(self, r.target)
+        except:
+            self.db.set_rule_clear(r)
+            raise
         finally:
             os.environ = old_env
+        logger.debug("!!Built %s" % r)
 
-        self.db.set_tag_done(r.target)
 
     @property
     def build_name(self):
@@ -1470,7 +1652,7 @@ class Builder(object):
         results = []
         for role in self.default_roles:
             label = Label(LabelType.Package, '*', role, LabelTag.PostInstalled)
-            labels = self.expand_wildcards(label)
+            labels = self.ruleset.expand_wildcards(label)
             results.extend(labels)
         return results
 
@@ -1622,7 +1804,7 @@ class Builder(object):
             for lbl in rule.deps:
                 if lbl.type == LabelType.Checkout:
                     if lbl.is_wildcard():
-                        checkouts.update(self.expand_wildcards(lbl))
+                        checkouts.update(self.ruleset.expand_wildcards(lbl))
                     else:
                         checkouts.add(lbl)
 
@@ -1647,7 +1829,7 @@ class Builder(object):
             for lbl in rule.deps:
                 if lbl.type == LabelType.Package:
                     if lbl.is_wildcard():
-                        packages.update(self.expand_wildcards(lbl))
+                        packages.update(self.ruleset.expand_wildcards(lbl))
                     else:
                         packages.add(lbl)
 
@@ -1729,34 +1911,10 @@ class Builder(object):
         return_list = []
         for label in labels:
             if label.is_wildcard():
-                return_list.extend(self.expand_wildcards(label))
+                return_list.extend(self.ruleset.expand_wildcards(label))
             else:
                 return_list.append(label)
         return return_list
-
-    def expand_wildcards(self, label, default_to_obvious_tag=True):
-        """
-        Given a label which may contain wildcards, return a set of labels that match.
-
-        As per the normal definition of labels, the <type>, <name>, <role> and
-        <tag> parts of the label may be wildcarded.
-
-        If default_to_obvious_tag is true, then if label has a tag of '*', it
-        will be replaced by the "obvious" (final) tag for this label type,
-        before any searching (so for a checkout: label, /checked_out would
-        be used).
-        """
-
-        if label.is_definite():
-            # There are no wildcards - it matches itself
-            # (should we check if it exists?)
-            return set([label])
-
-        if default_to_obvious_tag and label.tag == '*':
-            tag = utils.label_type_to_tag[label.type]
-            label = label.copy_with_tag(tag)
-
-        return self.ruleset.targets_match(label)
 
     def diagnose_unused_labels(self, labels, arg, required_type=None, required_tag=None):
         """Concoct a useful report on why none of 'labels' is used.
@@ -1905,7 +2063,7 @@ class Builder(object):
         for thing in self.what_to_release:
             if isinstance(thing, Label):
                 # It may be a wildcarded label, so try expanding it
-                labels = self.expand_wildcards(thing)
+                labels = self.ruleset.expand_wildcards(thing)
 
                 used_labels = []
                 # We're only interested in any labels that are actually used

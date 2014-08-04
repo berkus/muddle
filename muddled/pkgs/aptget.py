@@ -135,6 +135,9 @@ class AptGetBuilder(pkg.PackageBuilder):
 
             print ">> Installed %s"%(" ".join(self.pkgs_to_install))
 
+    def requires_master(self):
+        return True
+
 
 def simple(builder, name, role, apt_pkgs, os_version=None):
     """
