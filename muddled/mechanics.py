@@ -863,14 +863,10 @@ class Builder(object):
                 continue
 
             if self.db.is_rule_done(rule):
-                # raise MuddleBug("Rule %s is already done but returned from get_satisfied_rule" % rule)
                 logger.info("Rule %s is already done but returned from get_satisfied_rule" % rule)
                 continue
+
             if self.db.is_tag_done(rule.target):
-                logger.info(" transient tag/rule problems")
-                logger.info("  trans. tags: %s" % self.db.local_tags)
-                logger.info("  trans. rules: %s" % ", ".join(str(rule) for rule in self.db.local_rules))
-                # raise MuddleBug("Tag %s is already done but rule returned from get_satisfied_rule" % rule.target)
                 logger.info("  Tag %s is already done but rule returned from get_satisfied_rule" % rule.target)
                 continue
 
@@ -887,59 +883,6 @@ class Builder(object):
             while self.db.is_pause_requested():
                 time.sleep(0.1)
             self.db.unpause()
-
-    def build_labels_from_rule_list(self, rule_list, silent = False):
-
-        master = self.db.is_master()
-
-        free_rules = [r for r in rule_list if self.db.is_tag_clear(r.target)
-                      and (master or not r.action or not r.action.requires_master())]
-
-        while len(free_rules)>0:
-            acted=False
-            for r in free_rules:
-                if self.db.is_pause_requested():
-                    print "pause requested!"
-                    self.db.pause()
-                    while self.db.is_pause_requested():
-                        time.sleep(.5)
-                    self.db.unpause()
-                # Build it.
-                if self.db.is_tag_clear(r.target):
-                    deps_satisfied = True
-                    for dep in r.deps:
-                        if not self.db.is_tag_done(dep):
-                            deps_satisfied = False
-                    if deps_satisfied and self.db.set_tag_processing(r.target):
-                        if (not silent):
-                            print "> Building %s" % r.target
-                        if r.action and r.action.requires_master() and not master:
-                            raise MuddleBug("%s requires master and this is not master, should have been filtered earlier" % r.action)
-                        if r.action and r.action.requires_master():
-                            print "master required and available: %s" % r.action
-
-                        self._build_target(r, silent)
-                        self.db.set_rule_done(r)
-
-                        acted = True
-                    else:
-                        pass
-            free_rules = [r for r in free_rules if self.db.is_tag_clear(r.target)]
-            if not acted:
-                time.sleep(0.3)
-            # print "looping rule list %s" % os.getpid()
-            # print "rule list:"
-            # for r in rule_list:
-            #     print "    %s" % r.target
-            #     for dep in r.deps:
-            #         print "        %s" % dep
-            #     pass
-            # print "free rules:"
-            # for r in free_rules:
-            #     print "    %s" % r.target
-            #     for dep in r.deps:
-            #         print "        %s" % dep
-            #     pass
 
     def _build_target(self, r, silent=False):
 

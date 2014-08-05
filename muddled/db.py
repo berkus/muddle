@@ -211,7 +211,12 @@ def _connect_db(root_path):
             # maps rules to their dependencies
             conn.execute("CREATE TABLE IF NOT EXISTS rules_to_labels "
                             "(dep           LABEL, "
-                             "rule_target   LABEL);")
+                             "rule_target   LABEL,"
+                             "PRIMARY KEY (dep, rule_target));")
+
+            conn.execute("CREATE TABLE IF NOT EXISTS rules_to_build "
+                            "(target        LABEL PRIMARY KEY,"
+                             "req_master    BOOLEAN DEFAULT (0));")
 
             conn.execute("CREATE TABLE IF NOT EXISTS rules "
                             "(target        LABEL PRIMARY KEY, "
@@ -1398,29 +1403,25 @@ class Database(object):
     def tag_db(self, label):
         return os.path.join(self.tag_root_dir(label), '.muddle', 'tags_db')
 
-    def set_rules(self, ruleset, targets):
-        self.ind = ""
+    def set_ruleset(self, ruleset):
+        rule_to_label = set()
+        label_to_rule = set()
 
-        # TODO: pass these sets as part of a mutable object rather than patching the instance to contain new attributes
-        self._r_to_set = set()
-        self._r_l_to_set = set()
-        self._l_to_set = set()
-        self._l_r_to_set = set()
-
+        for label in ruleset.map.iterkeys():
+            for rule in ruleset.rules_for_target(label):
+                label_to_rule.add((label, rule))
+        for rule in ruleset.map.itervalues():
+            exp_deps = set()
+            for dep in rule.deps:
+                exp_deps.update(ruleset.expand_wildcards(dep))
+            rule.deps = exp_deps
+            for dep in rule.deps:
+                rule_to_label.add((rule, dep))
         try:
-            labels = set()
-            for target in targets:
-                labels.update(ruleset.targets_match(target, useMatch=True))
-            for label in labels:
-                self.logger.info(self.ind+"root target %s" % label)
-                self.ind += " |"
-                self._set_rules_label(ruleset, label, set([label]))
-                self.ind = self.ind[:-2]
             with self._connect_root_db() as conn:
                 self.logger.info("Committing ruleset to db")
 
-                self.logger.debug("Committing %s rules" % len(self._r_to_set))
-                for rule in self._r_to_set:
+                for rule in ruleset.map.itervalues():
 
                     if rule.action:
                         req_master = rule.action.requires_master()
@@ -1431,102 +1432,40 @@ class Database(object):
                                  (rule.target, sqlite3.Binary(cPickle.dumps(rule, pickle_ver)),
                                   req_master, rule.target.transient))
 
-                self.logger.debug("Committing %s labels" % len(self._l_to_set))
-                for label in self._l_to_set:
+                # TODO: this is suspect, should handle domains for labels correctly
+                for label in ruleset.map.iterkeys():
                     conn.execute("INSERT OR IGNORE INTO labels (label, transient) VALUES (?, ?)",
                                                    (label.copy_with_domain(None),label.transient))
 
-                self.logger.debug("Committing %s label to rule matches" % len(self._l_r_to_set))
-                for label, rule in self._l_r_to_set:
+                for label, rule in label_to_rule:
                     conn.execute("INSERT INTO labels_to_rules (target, rule_target) VALUES (?, ?)",
                                                    (label,rule.target))
 
-                self.logger.debug("Committing %s rule dependencies" % len(self._r_l_to_set))
-                for rule, label in self._r_l_to_set:
+                for rule, label in rule_to_label:
                     conn.execute("INSERT INTO rules_to_labels (dep, rule_target) VALUES (?, ?)",
                                                    (label,rule.target))
 
                 conn.commit()
-
         except:
-            #self.clear_rules()
+            self.clear_rules()
             raise
 
-    def _is_label_entered(self, label):
-        return label in self._l_to_set
+    def set_rules(self, ruleset, targets):
+        self.set_ruleset(ruleset)
 
-    def _is_rule_entered(self, rule):
-        return rule in self._r_to_set
-
-    def _add_label_to_rule(self, label, rule):
-        self._l_r_to_set.add((label, rule))
-
-    def _add_rule_to_label(self, rule, label):
-        self._r_l_to_set.add((rule, label))
-
-    def _enter_rule(self, rule):
-        self._r_to_set.add(rule)
-
-    def _enter_label(self, label):
-        self._l_to_set.add(label)
-
-    def _set_rules_label(self, ruleset, label, seen_labels):
-        self.logger.debug(self.ind+"set label %s - %s" % (label, self.is_tag_done(label)))
-        self.ind += " |"
-
-        if label.transient and label.is_wildcard():
-            raise GiveUp("Assumption has been violated, it is assumed that wildcard rules are non-transient. "
-                            "Violated by label %s" % label)
-
-        if not self.is_tag_done(label):
-            # will not add rules for labels that are already processed
-            rules = ruleset.rules_for_target(label)
-            self._enter_label(label)
-            for rule in rules:
-                if rule.target.transient and rule.target != label:
-                    raise MuddleBug("Assumption violated, transient rule %s matches %s" % (rule, label))
-
-                if label.is_wildcard() and rule.target == label and rule.action:
-                    raise MuddleBug("Assumption violated, wildcard label %s has an action within rule %s"
-                                    % (label, rule))
-
-                exp_deps = set([])
-                for dep in rule.deps:
-                    exp_deps.update(ruleset.expand_wildcards(dep))
-                rule.deps = exp_deps
-
-                self._add_label_to_rule(label, rule)
-                self._set_rules_rule(ruleset, rule, seen_labels)
-        self.ind = self.ind[:-2]
-
-    def _set_rules_rule(self, ruleset, rule, seen_labels):
-        self.logger.debug(self.ind + "set rule %s - %s" % (rule,self.is_rule_done(rule)))
-        self.ind += " |"
-        self._enter_rule(rule)
-
-        # For parallel processes transient labels should be built in each processes separately as
-        # they may set environment variables or other local state so to keep the dependecy search
-        # only one level deep it must be assumed that there will be no indirect dependencies on
-        # transient labels, which is most readily enforced by disallowing rules with non-transient
-        # targets to depend on transient labels
-        for dep in rule.deps:
-            if dep.transient and not rule.target.transient:
-                raise GiveUp("Assumption about dependencies violated, non-transient %s "
-                                "depends on transient label %s" % (rule.target, dep))
-
-        if seen_labels.intersection(rule.deps):
-            raise GiveUp("Circular dependencies occured, labels seen as own dependencies: %s"
-                         % seen_labels.intersection(rule.deps))
-        if self.is_tag_done(rule.target.copy_with_flags(transient=False)):
-            self.set_rule_done(rule)
-            self.ind = self.ind[:-2]
-            return
-        else:
-            self._enter_label(rule.target)
-            for label in rule.deps:
-                self._add_rule_to_label(rule, label)
-                self._set_rules_label(ruleset, label, seen_labels.union({label}))
-        self.ind = self.ind[:-2]
+        rules_to_build = depend.needed_to_build_labels(ruleset, targets, useMatch=True)
+        rules_to_build = {rule for rule in rules_to_build
+                                if (not self.is_rule_done(rule)) and (not self.is_tag_done(rule.target))}
+        with self._connect_root_db() as conn:
+            self.logger.debug("Committing %s rules to build" % len(rules_to_build))
+            for rule in rules_to_build:
+                if rule.action:
+                    req_master = rule.action.requires_master()
+                else:
+                    req_master = False
+                conn.execute("INSERT OR IGNORE INTO rules_to_build (target, req_master) VALUES (?, ?)",
+                             (rule.target,req_master))
+            conn.commit()
 
     def get_satisfied_rule(self, allow_master=False, req_master=False):
         self.logger.info("getting sat. rule, allow_master: %s, req_master: %s" % (allow_master, req_master))
@@ -1541,17 +1480,20 @@ class Database(object):
 
             if not allow_master:
                 cursor = conn.execute(
-                    "SELECT * FROM rules WHERE req_master=0 AND status=0 AND "
+                    "SELECT target FROM rules_to_build "
+                        "WHERE req_master=0 AND "
                         "target NOT IN (SELECT rule_target FROM rules_to_labels AS r_l "
                                             "JOIN labels AS l ON r_l.dep=l.label WHERE done=0 and l.transient=0)")
             elif req_master:
                 cursor = conn.execute(
-                    "SELECT * FROM rules WHERE req_master=1 AND status=0 AND "
+                    "SELECT target FROM rules_to_build "
+                        "WHERE req_master=1 AND "
                         "target NOT IN (SELECT rule_target FROM rules_to_labels AS r_l "
                                             "JOIN labels AS l ON r_l.dep=l.label WHERE done=0 and l.transient=0)")
             else:
                 cursor = conn.execute(
-                    "SELECT * FROM rules WHERE status=0 AND "
+                    "SELECT target FROM rules_to_build "
+                        "WHERE "
                         "target NOT IN (SELECT rule_target FROM rules_to_labels AS r_l "
                                             "JOIN labels AS l ON r_l.dep=l.label WHERE done=0 and l.transient=0)")
             # The cursor now contains rules where the non-transient dependencies in the root domain are satisfied,
@@ -1561,15 +1503,16 @@ class Database(object):
             while True:
                 result = cursor.fetchone()
                 if result:
-                    rule = cPickle.load(StringIO.StringIO(result['pickle']))
+                    # rule = cPickle.load(StringIO.StringIO(result['pickle']))
+                    rule = self.get_rule_for_label(result['target'])
                     self.logger.debug("  pot. results %s" % rule)
                 else:
                     self.logger.debug("  no pot. results remain")
                     return None
 
-                if self.is_rule_done(rule):
+                if not self.is_rule_clear(rule):
                     # rule has transient target so done state is stored locally
-                    self.logger.debug("    pot. results %s already done" % rule)
+                    self.logger.debug("    pot. results %s already done/processing" % rule)
                     continue
                 if not self._rule_deps_satisfied(rule, conn):
                     # rule has unsatisfied transient or subdomain dependencies
@@ -1739,6 +1682,8 @@ class Database(object):
                                         "owner_uuid=NULL "
                                     "WHERE target=?",
                                   (status, rule.target))
+            if not rule.target.transient:
+                conn.execute("DELETE FROM rules_to_build WHERE target=?", (rule.target,))
             conn.commit()
 
             # Sets labels as done when all rules they depend on have been run.
