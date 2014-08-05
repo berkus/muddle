@@ -204,18 +204,17 @@ def _connect_db(root_path):
             # maps labels to the matching rules
             conn.execute("CREATE TABLE IF NOT EXISTS labels_to_rules "
                             "(target        LABEL, "
-                             "rule_uuid     UUID);")
+                             "rule_target   LABEL);")
             # conn.execute("CREATE INDEX IF NOT EXISTS l_to_r_target ON  labels_to_rules"
             #                 "(target);")
 
             # maps rules to their dependencies
             conn.execute("CREATE TABLE IF NOT EXISTS rules_to_labels "
                             "(dep           LABEL, "
-                             "rule_uuid     UUID);")
+                             "rule_target   LABEL);")
 
             conn.execute("CREATE TABLE IF NOT EXISTS rules "
-                            "(rule_uuid     UUID PRIMARY KEY, "
-                             "target        LABEL UNIQUE ON CONFLICT FAIL, "
+                            "(target        LABEL PRIMARY KEY, "
                              "transient     BOOLEAN DEFAULT (0),"
                              # pickled rule instance, the plan is to not need to run the build descriptions
                              # for the secondary processes
@@ -1399,7 +1398,7 @@ class Database(object):
     def tag_db(self, label):
         return os.path.join(self.tag_root_dir(label), '.muddle', 'tags_db')
 
-    def set_rules(self, ruleset, target_list):
+    def set_rules(self, ruleset, targets):
         self.ind = ""
 
         # TODO: pass these sets as part of a mutable object rather than patching the instance to contain new attributes
@@ -1410,7 +1409,7 @@ class Database(object):
 
         try:
             labels = set()
-            for target in target_list:
+            for target in targets:
                 labels.update(ruleset.targets_match(target, useMatch=True))
             for label in labels:
                 self.logger.info(self.ind+"root target %s" % label)
@@ -1427,9 +1426,9 @@ class Database(object):
                         req_master = rule.action.requires_master()
                     else:
                         req_master = False
-                    conn.execute("INSERT OR IGNORE INTO rules (rule_uuid, target, pickle, req_master, transient) "
-                                    "VALUES (?, ?, ?, ?, ?)",
-                                 (rule.UUID, rule.target, sqlite3.Binary(cPickle.dumps(rule, pickle_ver)),
+                    conn.execute("INSERT OR IGNORE INTO rules (target, pickle, req_master, transient) "
+                                    "VALUES (?, ?, ?, ?)",
+                                 (rule.target, sqlite3.Binary(cPickle.dumps(rule, pickle_ver)),
                                   req_master, rule.target.transient))
 
                 self.logger.debug("Committing %s labels" % len(self._l_to_set))
@@ -1439,13 +1438,13 @@ class Database(object):
 
                 self.logger.debug("Committing %s label to rule matches" % len(self._l_r_to_set))
                 for label, rule in self._l_r_to_set:
-                    conn.execute("INSERT INTO labels_to_rules (target, rule_uuid) VALUES (?, ?)",
-                                                   (label,rule.UUID))
+                    conn.execute("INSERT INTO labels_to_rules (target, rule_target) VALUES (?, ?)",
+                                                   (label,rule.target))
 
                 self.logger.debug("Committing %s rule dependencies" % len(self._r_l_to_set))
                 for rule, label in self._r_l_to_set:
-                    conn.execute("INSERT INTO rules_to_labels (dep, rule_uuid) VALUES (?, ?)",
-                                                   (label,rule.UUID))
+                    conn.execute("INSERT INTO rules_to_labels (dep, rule_target) VALUES (?, ?)",
+                                                   (label,rule.target))
 
                 conn.commit()
 
@@ -1543,17 +1542,17 @@ class Database(object):
             if not allow_master:
                 cursor = conn.execute(
                     "SELECT * FROM rules WHERE req_master=0 AND status=0 AND "
-                        "rule_uuid NOT IN (SELECT rule_uuid FROM rules_to_labels AS r_l "
+                        "target NOT IN (SELECT rule_target FROM rules_to_labels AS r_l "
                                             "JOIN labels AS l ON r_l.dep=l.label WHERE done=0 and l.transient=0)")
             elif req_master:
                 cursor = conn.execute(
                     "SELECT * FROM rules WHERE req_master=1 AND status=0 AND "
-                        "rule_uuid NOT IN (SELECT rule_uuid FROM rules_to_labels AS r_l "
+                        "target NOT IN (SELECT rule_target FROM rules_to_labels AS r_l "
                                             "JOIN labels AS l ON r_l.dep=l.label WHERE done=0 and l.transient=0)")
             else:
                 cursor = conn.execute(
                     "SELECT * FROM rules WHERE status=0 AND "
-                        "rule_uuid NOT IN (SELECT rule_uuid FROM rules_to_labels AS r_l "
+                        "target NOT IN (SELECT rule_target FROM rules_to_labels AS r_l "
                                             "JOIN labels AS l ON r_l.dep=l.label WHERE done=0 and l.transient=0)")
             # The cursor now contains rules where the non-transient dependencies in the root domain are satisfied,
             # which clearly doesn't help for rules in subdomains which have no dependencies in the root domain.
@@ -1609,7 +1608,7 @@ class Database(object):
                         "(SELECT * FROM labels_to_rules WHERE target=?) AS l_r "
                         "JOIN rules AS r "
                         "WHERE "
-                            "r.rule_uuid=l_r.rule_uuid AND "
+                            "r.target=l_r.rule_target AND "
                             "l_r.target!=r.target AND "
                             "status!=?", (label, self.DONE))
             return cursor.fetchone() is None
@@ -1647,7 +1646,7 @@ class Database(object):
         with self._connect_root_db() as conn:
             cursor = conn.cursor()
 
-            cursor.execute("SELECT * FROM rules WHERE rule_uuid=? and status=?", (rule.UUID,state))
+            cursor.execute("SELECT * FROM rules WHERE target=? and status=?", (rule.target,state))
             return cursor.fetchone() is not None
 
     def is_rule_clear(self, rule):
@@ -1689,8 +1688,8 @@ class Database(object):
                                         "status=?, "
                                         "timestamp=CURRENT_TIMESTAMP, "
                                         "owner_uuid=NULL "
-                                    "WHERE rule_uuid=?",
-                                  (Database.CLEAR, rule.UUID))
+                                    "WHERE target=?",
+                                  (Database.CLEAR, rule.target))
 
     def set_rule_processing(self, rule):
         """
@@ -1707,13 +1706,13 @@ class Database(object):
             db_connection.execute(
                 "UPDATE OR IGNORE rules "
                     "SET status=?, owner_pid=?, owner_uuid=?, timestamp=CURRENT_TIMESTAMP "
-                    "WHERE target=? and rule_uuid=? and status=?",
-                (Database.PROCESSING, pid, UUID, rule.target, rule.UUID, Database.CLEAR))
+                    "WHERE target=?and status=?",
+                (Database.PROCESSING, pid, UUID, rule.target, Database.CLEAR))
             db_connection.commit()
             cursor = db_connection.execute(
                 "SELECT * FROM rules "
-                    "WHERE target=? AND rule_uuid=? AND owner_uuid=? AND owner_pid=? AND status=?",
-                (rule.target, rule.UUID, UUID, pid, Database.PROCESSING))
+                    "WHERE target=? AND owner_uuid=? AND owner_pid=? AND status=?",
+                (rule.target, UUID, pid, Database.PROCESSING))
             result = cursor.fetchone()
             return result is not None
 
@@ -1738,14 +1737,14 @@ class Database(object):
                                         "status=?, "
                                         "timestamp=CURRENT_TIMESTAMP, "
                                         "owner_uuid=NULL "
-                                    "WHERE rule_uuid=?",
-                                  (status, rule.UUID))
+                                    "WHERE target=?",
+                                  (status, rule.target))
             conn.commit()
 
             # Sets labels as done when all rules they depend on have been run.
             # Assume wildcards aren't transient so they have no transient matching rules
             if rule.target.is_wildcard():
-                cursor = conn.execute("SELECT target AS label FROM labels_to_rules WHERE rule_uuid=?", (rule.UUID,))
+                cursor = conn.execute("SELECT target AS label FROM labels_to_rules WHERE rule_target=?", (rule.target,))
                 for row in cursor:
                     label = row['label']
                     if self._label_wild_rules_done(label) and self._label_exact_rule_done(label):

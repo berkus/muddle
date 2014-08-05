@@ -1062,7 +1062,6 @@ class Rule(object):
         if (self.action is not None) and (not isinstance(action, Action)):
             raise MuddleBug("Attempt to create a rule with an object rule "
                             "which isn't an action but a %s."%(action.__class__.__name__))
-        self.UUID = uuid.uuid1()
 
     def replace_target(self, new_t):
         self.target = new_t
@@ -1680,6 +1679,7 @@ def needed_to_build_labels(ruleset, target_list, useTags = True, useMatch = Fals
             if trace:
                 print "\nLooking at target %s"%tgt
             rules = ruleset.rules_for_target(tgt, useTags)
+            # useMatch has a default argument of True and overrides the useTags flag
             if rules is None:
                 raise MuddleBug("No rule found for target %s"%tgt)
 
