@@ -10,7 +10,12 @@ from muddled.depend import Label, required_by, label_list_to_string, \
         normalise_checkout_label
 from muddled.utils import GiveUp, LabelType, wrap
 
-DEBUG=False
+import logging
+def log(*args, **kwargs):
+    args = [str(arg) for arg in args]
+    logging.getLogger(__name__).warning(' '.join(args))
+
+logger = logging.getLogger(__name__)
 
 ALL_LICENSE_CATEGORIES = ('gpl', 'open-source', 'prop-source', 'binary', 'private')
 
@@ -403,14 +408,14 @@ def print_standard_licenses():
         else:
             other_keys.append((key, license))
 
-    print 'Standard licenses are:'
+    log('Standard licenses are:')
 
     for thing in (gpl_keys, open_keys, binary_keys, private_keys, other_keys):
         if thing:
-            print
+            log()
             for key, license in sorted(thing):
-                print '%-*s %r'%(maxlen, key, license)
-    print
+                log('%-*s %r'%(maxlen, key, license))
+    log()
 
 def set_license(builder, co_label, license, license_file=None, not_built_against=False):
     """Set the license for a checkout.
@@ -632,7 +637,6 @@ def get_implicit_gpl_checkouts(builder):
     get_nothing_builds_against = builder.db.get_nothing_builds_against
     ruleset = builder.ruleset
 
-    DEBUG = False
 
     def add_if_not_us_or_gpl(our_co, this_co, result, because, reason):
         """Add 'this_co' to 'result' if it is not 'our_co' and not GPL itself.
@@ -643,11 +647,11 @@ def get_implicit_gpl_checkouts(builder):
         """
         if our_co.just_match(this_co):
             # OK, that's just some variant on ourselves
-            if DEBUG: print 'BUT %s is our_co'%this_co
+            logger.debug('BUT %s is our_co'%this_co)
             return
         this_license = get_checkout_license(this_co, absent_is_None=True)
         if this_license and this_license.is_gpl():
-            if DEBUG: print 'BUT %s is already GPL'%this_co
+            logger.debug('BUT %s is already GPL'%this_co)
             return
         lbl = this_co.copy_with_tag('*')
         result.add(lbl)
@@ -655,45 +659,44 @@ def get_implicit_gpl_checkouts(builder):
             because[lbl].add(reason)
         else:
             because[lbl] = set([reason])
-        if DEBUG: print 'ADD %s'%lbl
+        logger.debug('ADD %s'%lbl)
 
     result = set()              # Checkouts implicitly affected
     because = {}                # checkout -> what it depended on that did so
-    if DEBUG:
-        print
-        print 'Finding implicit GPL checkouts'
+    logger.debug()
+    logger.debug('Finding implicit GPL checkouts')
     for co_label in all_gpl_checkouts:
-        if DEBUG: print '.. %s'%co_label
+        logger.debug('.. %s'%co_label)
         license = get_checkout_license(co_label)
         if not license.propagates():
-            if DEBUG: print '     has a link-exception of some sort - ignoring it'
+            logger.debug('     has a link-exception of some sort - ignoring it')
             continue
         if get_nothing_builds_against(co_label):
-            if DEBUG: print '     nothing builds against this - ignoring it'
+            logger.debug('     nothing builds against this - ignoring it')
             continue
         depend_on_this = required_by(ruleset, co_label)
         for this_label in depend_on_this:
             # We should have a bunch of package labels (possibly the same
             # package present with different tags), plus quite likely some
             # variants on our own checkout label, and sometimes other stuff
-            if DEBUG: print '     %s'%this_label,
+            logger.debug('     %s'%this_label)
             if this_label.type == LabelType.Package:
 
                 not_affected_by = get_license_not_affected_by(this_label)
                 if co_label in not_affected_by:
-                    if DEBUG: print 'NOT against %s'%co_label
+                    logger.debug('NOT against %s'%co_label)
                     continue
 
                 # OK, what checkouts does that imply?
                 pkg_checkouts = builder.checkouts_for_package(this_label)
-                if DEBUG: print 'EXPANDS to %s'%(label_list_to_string(pkg_checkouts))
+                logger.debug('EXPANDS to %s'%(label_list_to_string(pkg_checkouts)))
 
                 for this_co in pkg_checkouts:
-                    if DEBUG: print '         %s'%this_label,
+                    logger.debug('         %s'%this_label)
 
                     not_affected_by = get_license_not_affected_by(this_co)
                     if co_label in not_affected_by:
-                        if DEBUG: print 'NOT against %s'%co_label
+                        logger.debug('NOT against %s'%co_label)
                         continue
                     # We know that our original 'co_label' has type '/*`
                     add_if_not_us_or_gpl(co_label, this_co, result, because,
@@ -706,7 +709,7 @@ def get_implicit_gpl_checkouts(builder):
                                                          co_label))
             else:
                 # Deployments don't build stuff, so we can ignore them
-                if DEBUG: print 'IGNORE'
+                logger.debug('IGNORE')
                 continue
     return result, because
 
@@ -827,16 +830,16 @@ def report_license_clashes(builder, report_binary=True, report_private=True, jus
         license = get_checkout_license(co_label)
         reasons = because[co_label]
         header = '* %-*s is %r, but is implicitly GPL because:'%(maxlen, co_label, license)
-        print wrap(header, subsequent_indent='  ')
-        print
+        log(wrap(header, subsequent_indent='  '))
+        log()
         for reason in sorted(reasons):
-            print '  - %s'%reason
-        print
+            log('  - %s'%reason)
+        log()
 
     if report_binary or report_private:
-        print
-        print 'The following GPL license clashes occur:'
-        print
+        log()
+        log('The following GPL license clashes occur:')
+        log()
 
         maxlen = 0
         if report_binary:
@@ -945,18 +948,18 @@ def report_license_clashes_in_role(builder, role, just_report_private=True):
             maxlen = length
 
     if just_report_private:
-        print 'There are both binary and private licenses in role %s:'%(role)
+        log('There are both binary and private licenses in role %s:'%(role))
         for key in sorted(private_keys):
-            print '* %-*s is %r'%(maxlen, key, private_items[key])
+            log('* %-*s is %r'%(maxlen, key, private_items[key]))
     else:
         for label in binary_keys:
             length = len(str(label))
             if length > maxlen:
                 maxlen = length
-        print 'There are both binary and private licenses in role %s:'%(role)
+        log('There are both binary and private licenses in role %s:'%(role))
         for key in sorted(binary_keys):
-            print '* %-*s is %r'%(maxlen, key, binary_items[key])
+            log('* %-*s is %r'%(maxlen, key, binary_items[key]))
         for key in sorted(private_keys):
-            print '* %-*s is %r'%(maxlen, key, private_items[key])
+            log('* %-*s is %r'%(maxlen, key, private_items[key]))
 
     return True

@@ -13,6 +13,11 @@ element.
 import muddled.utils as utils
 import re
 
+import logging
+def log(*args, **kwargs):
+    args = [str(arg) for arg in args]
+    logging.getLogger(__name__).warning(' '.join(args))
+
 g_trace_parser = False
 
 def get_text_in_xml_node(node):
@@ -111,7 +116,7 @@ class PushbackInputStream(object):
             res = self.pushback_char
             self.pushback_char = -1
             if g_trace_parser:
-                print "next(%d,%d) = %c (pushback)"%(self.line_no, self.char_no, res)
+                log("next(%d,%d) = %c (pushback)"%(self.line_no, self.char_no, res))
             # We don't want to change our line or character number
             return res
         elif self.idx >= len(self.input):
@@ -133,9 +138,9 @@ class PushbackInputStream(object):
 
         if g_trace_parser:
             if res < 0:
-                print "next(%d,%d) = -1"%(self.line_no, self.char_no)
+                log("next(%d,%d) = -1"%(self.line_no, self.char_no))
             else:
-                print "next(%d,%d) = %c "%(self.line_no, self.char_no, res)
+                log("next(%d,%d) = %c "%(self.line_no, self.char_no, res))
 
         return res
 
@@ -157,13 +162,13 @@ class PushbackInputStream(object):
     def print_what_we_just_read(self):
         lines = self.input.splitlines()
         maxlen = len('%d'%self.line_no)
-        print 'Just read:'
+        log('Just read:')
         count = self.line_no - 2
         for line in lines[self.line_no-3:self.line_no]:
-            print 'Line %*d: %s'%(maxlen, count, line)
+            log('Line %*d: %s'%(maxlen, count, line))
             count += 1
         if self.idx == len(self.input):
-            print '     %s  <EOF>'%(' '*maxlen)
+            log('     %s  <EOF>'%(' '*maxlen))
 
     def get_line(self, line_no):
         """Return line 'line_no'. Line numbers start at 1.
@@ -267,7 +272,7 @@ class TreeNode(object):
         elif (self.type == TreeNode.InstructionType):
             # Evaluate some sort of function.
             if (g_trace_parser):
-                print "Eval instr: %s"%(self.instr_type)
+                log("Eval instr: %s"%(self.instr_type))
 
             if (self.instr_type == "val"):
                 self.val(xml_doc, env, output_list)
@@ -306,7 +311,7 @@ class TreeNode(object):
             raise utils.GiveUp("Attempt to substitute key '%s' which does not exist."%key_name)
 
         if (g_trace_parser):
-            print "node.val(%s -> %s) = %s"%(self.expr, key_name, res)
+            log("node.val(%s -> %s) = %s"%(self.expr, key_name, res))
 
         output_list.append(res)
 
@@ -328,7 +333,7 @@ class TreeNode(object):
             raise utils.GiveUp("Attempt to substitute key '%s' which does not exist."%key_name)
 
         if (g_trace_parser):
-            print "node.fnval(%s -> %s) = %s"%(self.params[0], key_name, res)
+            log("node.fnval(%s -> %s) = %s"%(self.params[0], key_name, res))
 
         output_list.append(res)
 
@@ -385,7 +390,7 @@ def parse_document(input_stream, node, end_chars, has_escapes):
         c = input_stream.next()
 
         if (g_trace_parser):
-            print "parse_document(): c = %s cur_str = [ %s ] state = %d"%(c,",".join(cur_str), state)
+            log("parse_document(): c = %s cur_str = [ %s ] state = %d"%(c,",".join(cur_str), state))
 
         ends_now = (c < 0)
         if ((not ends_now) and  state == 0 and end_chars is not None):
@@ -393,15 +398,15 @@ def parse_document(input_stream, node, end_chars, has_escapes):
 
         if ((end_chars is not None) and (c < 0)):
             #input_stream.print_what_we_just_read()
-            print 'Current state is %s'%state_desc[state]
+            log('Current state is %s'%state_desc[state])
             end_chars = ', '.join(map(repr, end_chars))
-            print "Expected end char (%s) for item at line %d, char %d"%(
+            log("Expected end char (%s) for item at line %d, char %d"%(
                     end_chars,
                     start_line_no,
-                    start_char_no)
-            print '  %s'%input_stream.get_line(start_line_no)
-            print '  %s^ char %d'%(' '*(start_char_no - 1), start_char_no)
-            print "The text that was not ended is %r"%(''.join(cur_str))
+                    start_char_no))
+            log('  %s'%input_stream.get_line(start_line_no))
+            log('  %s^ char %d'%(' '*(start_char_no - 1), start_char_no))
+            log("The text that was not ended is %r"%(''.join(cur_str)))
             raise utils.GiveUp("Syntax Error: Input text ends whilst waiting for"
                                " end char (%s)"%end_chars)
 
@@ -413,7 +418,7 @@ def parse_document(input_stream, node, end_chars, has_escapes):
             input_stream.push_back(c)
             cur_str = [ ]
             if (g_trace_parser):
-                print "parse_document(): terminating character %r detected. Ending."%(c)
+                log("parse_document(): terminating character %r detected. Ending."%(c))
             return
 
         if (state == 0):
@@ -438,9 +443,9 @@ def parse_document(input_stream, node, end_chars, has_escapes):
                 # Eat the trailing character
                 x = input_stream.next()
                 if x != '}':
-                    print '  %s'%input_stream.get_line(start_line_no)
-                    print '  %s^ char %d'%(' '*(start_char_no - 1), start_char_no)
-                    print "The text that was not ended is %r"%(''.join(cur_str))
+                    log('  %s'%input_stream.get_line(start_line_no))
+                    log('  %s^ char %d'%(' '*(start_char_no - 1), start_char_no))
+                    log("The text that was not ended is %r"%(''.join(cur_str)))
                     raise utils.GiveUp('Instruction did not end with %r: %s'%('}', input_stream.report()))
                 # .. and back to the start.
                 state = 0
@@ -495,7 +500,7 @@ def flatten_literal_node(in_node):
         lst.append(flatten_literal_node(i))
 
     if (g_trace_parser):
-        print "Flatten: %s  Gives '%s'\n"%(in_node, "".join(lst))
+        log("Flatten: %s  Gives '%s'\n"%(in_node, "".join(lst)))
 
     return "".join(lst)
 
@@ -548,14 +553,14 @@ def parse_instruction(input_stream, node):
     """
 
     if (g_trace_parser):
-        print "parse_instruction() begins: "
+        log("parse_instruction() begins: ")
 
     skip_whitespace(input_stream)
 
     # This is an instruction node, so ..
     if (input_stream.peek() == '"'):
         if (g_trace_parser):
-            print "parse_instruction(): quoted literal detected"
+            log("parse_instruction(): quoted literal detected")
 
         # Consume that last peek'd character...
         input_stream.next()
@@ -583,7 +588,7 @@ def parse_instruction(input_stream, node):
         result.set_val(container)
         node.append_child(result)
         if (g_trace_parser):
-            print "parse_instruction(): ends"
+            log("parse_instruction(): ends")
 
         return
 
@@ -632,7 +637,7 @@ def parse_instruction(input_stream, node):
 
     # In many ways, it is worth adding our result to the parse tree.
     if (g_trace_parser):
-        print "parse_instruction(): ends (2)"
+        log("parse_instruction(): ends (2)")
     node.append_child(result)
 
 def subst_str(in_str, xml_doc, env):

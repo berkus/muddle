@@ -11,6 +11,10 @@ import muddled.depend as depend
 from muddled.utils import GiveUp, LabelTag, LabelType
 from muddled.utils import run2, Choice, get_os_version_name
 
+import logging
+def log(*args, **kwargs):
+    args = [str(arg) for arg in args]
+    logging.getLogger(__name__).warning(' '.join(args))
 
 class AptGetBuilder(pkg.PackageBuilder):
     """
@@ -128,12 +132,12 @@ class AptGetBuilder(pkg.PackageBuilder):
             if (len(need_to_install) > 0):
                 cmd_list = [ "sudo", "apt-get", "install" ]
                 cmd_list.extend(need_to_install)
-                print "> %s"%(" ".join(cmd_list))
+                log("> %s"%(" ".join(cmd_list)))
                 rv = subprocess.call(cmd_list)
                 if rv != 0:
                     raise GiveUp("Couldn't install required packages")
 
-            print ">> Installed %s"%(" ".join(self.pkgs_to_install))
+            log(">> Installed %s"%(" ".join(self.pkgs_to_install)))
 
     def requires_master(self):
         return True

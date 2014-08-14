@@ -34,6 +34,11 @@ Available Subversion specific options are:
 from muddled.version_control import register_vcs, VersionControlSystem
 import muddled.utils as utils
 
+import logging
+def log(*args, **kwargs):
+    args = [str(arg) for arg in args]
+    logging.getLogger(__name__).warning(' '.join(args))
+
 class Subversion(VersionControlSystem):
     """
     Provide version control operations for Subversion
@@ -51,7 +56,7 @@ class Subversion(VersionControlSystem):
 
         Will be called in the actual checkout's directory.
         """
-        print 'Muddle svn support does not know how to "init" a directory'
+        log('Muddle svn support does not know how to "init" a directory')
 
     def add_files(self, files=None, verbose=True):
         """
@@ -101,7 +106,9 @@ class Subversion(VersionControlSystem):
                                " in 'pull' (branch='%s')"%repo.branch)
         text = utils.get_cmd_data("svn status")
         for line in text:
+            log(text)
             if 'C' in (line[0], line[1], line[6]):
+                log(text)
                 raise utils.GiveUp("%s: 'svn status' says there is a Conflict,"
                                     " refusing to pull:\n%s\nUse 'muddle merge'"
                                     " if you want to merge"%(utils.indent(text,'    ')))

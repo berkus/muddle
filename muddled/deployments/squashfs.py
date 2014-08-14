@@ -27,12 +27,17 @@ from muddled.deployments.collect import copy_from_checkout, \
                                         copy_from_role_install, \
                                         copy_from_deployment
 
+import logging
+def log(*args, **kwargs):
+    args = [str(arg) for arg in args]
+    logging.getLogger(__name__).warning(' '.join(args))
+
 class SquashFSApplyMknod(InstructionImplementor):
     def prepare(self, builder, instr, role, path):
         return True
 
     def apply(self, builder, instr, role, path):
-        print "Warning: Attempt to apply a mknod() instruction in a squashfs FS - ignored."
+        log("Warning: Attempt to apply a mknod() instruction in a squashfs FS - ignored.")
         return True
 
 
@@ -89,7 +94,7 @@ class SquashFSDeploymentBuilder(CollectDeploymentBuilder):
         if self.my_tmp is None:
             self.my_tmp = tempfile.mkdtemp();
 
-        print "Deploying to %s .. \n"%self.my_tmp
+        log("Deploying to %s .. \n"%self.my_tmp)
 
         if label.tag == utils.LabelTag.Deployed:
             self.apply_instructions(builder, label, True, self.my_tmp)

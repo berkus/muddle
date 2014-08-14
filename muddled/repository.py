@@ -13,6 +13,11 @@ from urlparse import urlparse, urljoin, urlunparse
 
 from muddled.utils import GiveUp
 
+import logging
+def log(*args, **kwargs):
+    args = [str(arg) for arg in args]
+    logging.getLogger(__name__).warning(' '.join(args))
+
 _branch_and_revision_re = re.compile("([^:]*):(.*)$")
 
 @total_ordering
@@ -688,18 +693,18 @@ def get_upstream_repos(builder, orig_repo, names=None):
     return builder.db.add_upstream_repo(orig_repo, names)
 
 if __name__ == '__main__':
-    print 'Running doctests'
+    log('Running doctests')
     import doctest
     failures, tests = doctest.testmod()
-    print '{failures} failures in {tests} tests'.format(failures=failures, tests=tests)
-    print 'Running other tests'
+    log('{failures} failures in {tests} tests'.format(failures=failures, tests=tests))
+    log('Running other tests')
     r = Repository('git', 'https://fred', 'jim', branch='99')
-    print r
+    log(r)
     assert repr(r) == "Repository('git', 'https://fred', 'jim', branch='99')"
     h = Repository.get_path_handler('git', 'https://code.google.com/p/')
     assert h is None
     h = Repository.get_path_handler('git', 'https://code.google.com/fred')
     assert h is None
-    print 'OK'
+    log('OK')
 
 # vim: set tabstop=8 softtabstop=4 shiftwidth=4 expandtab:

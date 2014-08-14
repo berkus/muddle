@@ -11,10 +11,15 @@ import os
 import sys
 import traceback
 
+import logging
+def log(*args):
+    logging.getLogger(__name__).warning(" ".join(args))
+
+
 # This is a bit draconian, but it really doesn't work with 2.6 or 3.x
 if sys.version_info.major != 2 or sys.version_info.minor < 7:
-    print("Muddle currently requires Python 2.7, not %d.%d.%d"%(sys.version_info.major,
-        sys.version_info.minor, sys.version_info.micro))
+    log(("Muddle currently requires Python 2.7, not %d.%d.%d"%(sys.version_info.major,
+        sys.version_info.minor, sys.version_info.micro)))
     sys.exit(1)
 
 # Perform a nasty trick to enable us to import the package
@@ -51,8 +56,8 @@ if __name__ == "__main__":
     except MuddleBug, e:
         # We assume this represents a bug in muddle itself, so give a full
         # traceback to help locate it.
-        print
-        print "%s"%e
+        log()
+        log("%s"%e)
         traceback.print_exc()
         sys.exit(e.retcode)
     except ShellError, e:
@@ -61,16 +66,16 @@ if __name__ == "__main__":
         # utils.run0()) failed and was not caught elsewhere. This is normally
         # a problem in the muddle infrastructure, so we treat it as a
         # MuddleBug, with a full traceback
-        print
-        print "%s"%e
+        log()
+        log("%s"%e)
         traceback.print_exc()
         sys.exit(e.retcode)
     except GiveUp as e:
         # We have some error or infelicity to tell the user about, which
         # is being communicated to us via a GiveUp exception. This is not
         # (should not be) a bug in muddle itself.
-        print
+        log()
         text = str(e)
         if text:
-            print(text)
+            log(text)
         sys.exit(e.retcode)

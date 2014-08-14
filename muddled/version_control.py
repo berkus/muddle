@@ -14,6 +14,11 @@ from muddled.utils import split_vcs_url, GiveUp, MuddleBug, Unsupported
 from muddled.db import CheckoutData
 from muddled.withdir import Directory
 
+import logging
+def log(*args, **kwargs):
+    args = [str(arg) for arg in args]
+    logging.getLogger(__name__).warning(' '.join(args))
+
 class VersionControlSystem(object):
     """
     Provide version control operations for a particular VCS.
@@ -111,8 +116,8 @@ class VersionControlSystem(object):
         Will be called in the actual checkout's directory.
         """
         if verbose:
-            print "Re-associating checkout '%s' with remote repository:" \
-                    " %s does not support 'reparent'"%(co_leaf, self.short_name)
+            log("Re-associating checkout '%s' with remote repository:" \
+                    " %s does not support 'reparent'"%(co_leaf, self.short_name))
 
     def revision_to_checkout(self, repo, co_leaf, options, force=False, before=None, verbose=True):
         """
@@ -302,22 +307,22 @@ class VersionControlHandler(object):
             # This can happen when we're unstamping
             return None
         if builder.build_desc_label.match_without_tag(co_label):
-            if DEBUG: print 'We are the build description'
+            if DEBUG: log('We are the build description')
             if builder.follow_build_desc_branch:
-                if DEBUG: print 'Build desc following itself'
+                if DEBUG: log('Build desc following itself')
                 return builder.get_build_desc_branch(verbose=DEBUG)
             else:
-                if DEBUG: print 'Not following build description'
+                if DEBUG: log('Not following build description')
                 return None     # consonant with the below
 
         if repo.revision or repo.branch:
-            if DEBUG: print 'Revision already set to %s'%repo.revision
-            if DEBUG: print 'Branch already set to %s'%repo.branch
+            if DEBUG: log('Revision already set to %s'%repo.revision)
+            if DEBUG: log('Branch already set to %s'%repo.branch)
             return None         # we're happy with that we've got
         elif builder.follow_build_desc_branch:
 
             if 'no_follow' in co_data.options:
-                if DEBUG: print 'Checkout is marked "no_follow"'
+                if DEBUG: log('Checkout is marked "no_follow"')
                 return None
 
             build_desc_branch = builder.get_build_desc_branch(verbose=DEBUG)
@@ -336,7 +341,7 @@ class VersionControlHandler(object):
                              "or specify the 'no_follow' option."%(
                              build_desc_branch, co_label.name, self.long_name, co_label.name))
         else:
-            if DEBUG: print 'Not following build description'
+            if DEBUG: log('Not following build description')
             return None
 
     def checkout(self, builder, co_label, verbose=True):
@@ -408,7 +413,7 @@ class VersionControlHandler(object):
             # The build description told us to follow it, onto this branch
             # - so let's remember it on the Repository
             repo = repo.copy_with_changed_branch(specific_branch)
-            print 'Specific branch %s in %s'%(specific_branch, co_label)
+            log('Specific branch %s in %s'%(specific_branch, co_label))
 
         options = builder.db.get_checkout_vcs_options(co_label)
         try:
@@ -443,7 +448,7 @@ class VersionControlHandler(object):
             # The build description told us to follow it, onto this branch
             # - so let's remember it on the Repository
             repo = repo.copy_with_changed_branch(specific_branch)
-            print 'Specific branch %s in %s'%(specific_branch, co_label)
+            log('Specific branch %s in %s'%(specific_branch, co_label))
 
         options = builder.db.get_checkout_vcs_options(co_label)
         try:
@@ -548,7 +553,7 @@ class VersionControlHandler(object):
         the remote repository into it.
         """
         if verbose:
-            print '>>', co_label
+            log('>>', co_label)
         repo = builder.db.get_checkout_repo(co_label)
         options = builder.db.get_checkout_vcs_options(co_label)
         try:
@@ -773,7 +778,7 @@ class VersionControlHandler(object):
 
         BEWARE: this duplicates some of the code in branch_to_follow().
         """
-        if verbose: print 'Synchronising for', co_label
+        if verbose: log('Synchronising for', co_label)
 
         co_data = builder.db.get_checkout_data(co_label)
         repo = co_data.repo
@@ -781,71 +786,71 @@ class VersionControlHandler(object):
         can_sync = True
 
         if builder.build_desc_label.match_without_tag(co_label):
-            if verbose: print '  This is the build description'
+            if verbose: log('  This is the build description')
             follow = builder.follow_build_desc_branch
-            if verbose: print '  The build description %s "follow" set'%('has' if follow
-                    else 'does not have')
+            if verbose: log('  The build description %s "follow" set'%('has' if follow
+                    else 'does not have'))
             if follow:
                 # By definition, we're already AT the build description branch
                 # so we have nothing further to do...
-                if verbose: print "  Following ourselves - so we're already there"
+                if verbose: log("  Following ourselves - so we're already there")
                 return
         else:
             if repo.revision:
-                if verbose: print '  We have a specific revision in the build' \
-                                  ' description, "%s"'%repo.revision
+                if verbose: log('  We have a specific revision in the build' \
+                                  ' description, "%s"'%repo.revision)
                 follow = False
             elif repo.branch:
-                if verbose: print '  We have a specific branch in the build' \
-                                  ' description, "%s"'%repo.branch
+                if verbose: log('  We have a specific branch in the build' \
+                                  ' description, "%s"'%repo.branch)
                 follow = False
             elif 'no_follow' in co_data.options:
-                if verbose: print '  Checkout is marked "no_follow"'
+                if verbose: log('  Checkout is marked "no_follow"')
                 follow = False
                 can_sync = False
             elif not self.vcs.supports_branching():
-                if verbose: print '  Changing branch is not supported for this' \
-                                  ' VCS, %s'%self.vcs.short_name
+                if verbose: log('  Changing branch is not supported for this' \
+                                  ' VCS, %s'%self.vcs.short_name)
                 follow = False
                 can_sync = False
             elif 'shallow_checkout' in co_data.options:
-                if verbose: print '  This is a shallow checkout'
+                if verbose: log('  This is a shallow checkout')
                 follow = False
                 can_sync = False
             else:
                 follow = builder.follow_build_desc_branch
-                if verbose: print '  The build description %s "follow" set'%('has' if follow
-                        else 'does not have')
+                if verbose: log('  The build description %s "follow" set'%('has' if follow
+                        else 'does not have'))
 
         if follow:
             # We are meant to be following our build description's branch
             build_desc_branch = builder.get_build_desc_branch(verbose=verbose)
             # And so follow it...
-            if verbose: print '  We want to follow the build description onto branch' \
-                              ' "%s"'%build_desc_branch
+            if verbose: log('  We want to follow the build description onto branch' \
+                              ' "%s"'%build_desc_branch)
             branch = build_desc_branch
             revision = None
         elif can_sync:
-            if verbose: print '  We do NOT want to follow the build description'
+            if verbose: log('  We do NOT want to follow the build description')
             # We are meant to keep to our own revision or branch, whatever that is
             if repo.revision is not None:
                 if repo.branch:
-                    if verbose: print '  We want revision "%s", branch' \
-                                      ' "%s"'%(repo.revision, repo.branch)
+                    if verbose: log('  We want revision "%s", branch' \
+                                      ' "%s"'%(repo.revision, repo.branch))
                 else:
-                    if verbose: print '  We want revision "%s"'%repo.revision
+                    if verbose: log('  We want revision "%s"'%repo.revision)
                 branch = repo.branch
                 revision = repo.revision
             elif repo.branch is not None:
-                if verbose: print '  We want branch "%s"'%repo.branch
+                if verbose: log('  We want branch "%s"'%repo.branch)
                 branch = repo.branch
                 revision = None
             else:
-                if verbose: print '  We want branch "master"'
+                if verbose: log('  We want branch "master"')
                 branch = 'master'
                 revision = None
         else:
-            if verbose: print '  Not trying to do anything'
+            if verbose: log('  Not trying to do anything')
 
         if sync and can_sync:
             if revision is None:

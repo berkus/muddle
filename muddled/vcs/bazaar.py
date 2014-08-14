@@ -39,6 +39,11 @@ import re
 from muddled.version_control import register_vcs, VersionControlSystem
 import muddled.utils as utils
 
+import logging
+def log(*args, **kwargs):
+    args = [str(arg) for arg in args]
+    logging.getLogger(__name__).warning(' '.join(args))
+
 class Bazaar(VersionControlSystem):
     """
     Provide version control operations for Bazaar
@@ -204,7 +209,7 @@ class Bazaar(VersionControlSystem):
 
         text = self._run1("bzr pull %s %s"%(rspec, self._normalised_repo(repo.url)),
                           env=env, verbose=verbose)
-        print text
+        log(text)
         if (text.startswith('No revisions to pull')  # older versions of bzr
             or
             text.startswith('No revisions or tags to pull') # bzr v2.6
@@ -219,7 +224,7 @@ class Bazaar(VersionControlSystem):
             if retcode:
                 raise utils.GiveUp('Error uncommiting to revision %s (we already tried'
                                    ' pull)\nReturn code  %d\n%s'%(rspec, retcode, text))
-            print text
+            log(text)
             # Then we need to 'revert' to undo any changes (since uncommit
             # doesn't change our working set). The --no-backup stops us
             # being left with copies of the changes in backup files (which
@@ -229,7 +234,7 @@ class Bazaar(VersionControlSystem):
             if retcode:
                 raise utils.GiveUp('Error reverting to revision %s (we already'
                                    ' uncommitted)\nReturn code %d\n%s'%(rspec, retcode, text))
-            print text
+            log(text)
 
         ending_revno = self._just_revno()
         # Did we update anything?
@@ -306,7 +311,7 @@ class Bazaar(VersionControlSystem):
         ok, cmd, text = self._all_checked_in(env)
         if not ok:
             if verbose:
-                print "'%s' reports uncommitted data\n%s"%(cmd, text)
+                log("'%s' reports uncommitted data\n%s"%(cmd, text))
             return False
 
         # So, is our current revision (on this local branch) also present
@@ -315,9 +320,9 @@ class Bazaar(VersionControlSystem):
         missing = missing.strip()
         if missing:
             if verbose:
-                print "'%s' reports checkout does not match the remote" \
-                        " repository"%cmd
-                print missing
+                log("'%s' reports checkout does not match the remote" \
+                        " repository"%cmd)
+                log(missing)
             return False
         return True
 
@@ -345,7 +350,7 @@ class Bazaar(VersionControlSystem):
         which is a .INI file.
         """
         if verbose:
-            print "Re-associating checkout '%s' with remote repository"%co_leaf
+            log("Re-associating checkout '%s' with remote repository"%co_leaf)
         this_dir = os.curdir
         this_file = os.path.join(this_dir, '.bzr', 'branch', 'branch.conf')
 
@@ -382,36 +387,36 @@ class Bazaar(VersionControlSystem):
             changed = True
             if 'push_location' in items:        # Forget it
                 if verbose:
-                    print
-                    print '.. Forgetting "push" location'
+                    log()
+                    log('.. Forgetting "push" location')
                 items['push_location'] = None
             if 'parent_location' not in items:  # Place it at the end
                 posns.append(('parent_location', remote_repo))
                 if verbose:
-                    print
-                    print '.. Setting "parent" location %s'%remote_repo
+                    log()
+                    log('.. Setting "parent" location %s'%remote_repo)
             else:
                 if verbose:
-                    print '.. Overwriting "parent" location'
-                    print '   it was     %s'%items['parent_location']
-                    print '   it becomes %s'%remote_repo
+                    log('.. Overwriting "parent" location')
+                    log('   it was     %s'%items['parent_location'])
+                    log('   it becomes %s'%remote_repo)
             items['parent_location'] = remote_repo
         else:
             if 'parent_location' not in items:  # Place it at the end
                 if verbose:
-                    print
-                    print '.. Setting "parent" location %s'%remote_repo
+                    log()
+                    log('.. Setting "parent" location %s'%remote_repo)
                 posns.append(('parent_location', remote_repo))
                 items['parent_location'] = remote_repo
                 changed = True
             elif verbose:
-                print ' - already associated'
+                log(' - already associated')
                 if items['parent_location'] != remote_repo:
-                    print '.. NB with %s'%items['parent_location']
-                    print '       not %s'%remote_repo
+                    log('.. NB with %s'%items['parent_location'])
+                    log('       not %s'%remote_repo)
 
         if changed:
-            print '.. Writing branch configuration file'
+            log('.. Writing branch configuration file')
             with open(this_file, 'w') as fd:
                 for key, orig_line in posns:
                     if key == '#':
@@ -558,8 +563,8 @@ class Bazaar(VersionControlSystem):
         ok, cmd, txt = self._all_checked_in(env)
         if not ok:
             if force:
-                print "'%s' reports checkout '%s' has uncommitted data" \
-                        " (ignoring it)"%(cmd, co_leaf)
+                log("'%s' reports checkout '%s' has uncommitted data" \
+                        " (ignoring it)"%(cmd, co_leaf))
             else:
                 raise utils.GiveUp("%s: '%s' reports"
                                    " checkout has uncommitted data"%(cmd, co_leaf))
@@ -575,8 +580,8 @@ class Bazaar(VersionControlSystem):
                 if force:
                     if all([x.isdigit() for x in orig_revision]):
                         if verbose:
-                            print missing
-                            print 'Using original revision: %s'%orig_revision
+                            log(missing)
+                            log('Using original revision: %s'%orig_revision)
                         return orig_revision
                     else:
                         raise utils.GiveUp("%s: 'bzr missing' says '%s',\n"

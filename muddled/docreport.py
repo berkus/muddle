@@ -375,7 +375,7 @@ if __name__ == '__main__':
     try:
         report(args)
     except GiveUp as e:
-        print e
+        logger.exception(e)
         sys.exit(1)
 
 # vim: set tabstop=8 softtabstop=4 shiftwidth=4 expandtab:

@@ -22,6 +22,11 @@ import muddled.deployment as deployment
 from muddled.depend import Action, Label
 from muddled.utils import GiveUp, MuddleBug
 
+import logging
+def log(*args, **kwargs):
+    args = [str(arg) for arg in args]
+    logging.getLogger(__name__).warning(' '.join(args))
+
 class InstructionImplementor(object):
     def prepare(self, builder, instruction, role, path):
         """
@@ -252,7 +257,7 @@ class CollectDeploymentBuilder(Action):
                                      " found in label %s (filename %s)"%(lbl, fn))
 
 
-        print "Rerunning muddle to apply instructions .. "
+        log("Rerunning muddle to apply instructions .. ")
 
         permissions_label = Label(utils.LabelType.Deployment,
                                   label.name, None, # XXX label.role,
@@ -262,7 +267,7 @@ class CollectDeploymentBuilder(Action):
         # cmd = [builder.muddle_binary, "buildlabel", str(permissions_label)]
         cmd = ["_sub_build_ignore_dep", str(permissions_label)]
         if need_root_for:
-            print "I need root to do %s - sorry! - running sudo .."%(', '.join(sorted(need_root_for)))
+            log("I need root to do %s - sorry! - running sudo .."%(', '.join(sorted(need_root_for))))
             # The following works on the assumption that multiple muddles run using a single terminal
             # for output and (more significantly in this case) input. If muddle changes to only have
             # manually started helper processes in different threads then the pause mechanism should
@@ -289,11 +294,11 @@ class CollectDeploymentBuilder(Action):
 
             instr_list = builder.load_instructions(lbl)
             for (lbl, fn, instrs) in instr_list:
-                print "%s deployment: Applying instructions for role %s, label %s .. "%(self.what, lbl.role, lbl)
+                log("%s deployment: Applying instructions for role %s, label %s .. "%(self.what, lbl.role, lbl))
                 for instr in instrs:
                     # Obey this instruction.
                     iname = instr.outer_elem_name()
-                    print 'Instruction:', iname
+                    log('Instruction:', iname)
                     if iname in self.app_dict:
                         if prepare:
                             self.app_dict[iname].prepare(builder, instr, lbl.role, deploy_path)

@@ -16,10 +16,15 @@ import traceback
 import muddled.commands as commands
 import muddled.utils as utils
 import muddled.mechanics as mechanics
+import muddled.logs as logs
 
 from muddled.depend import Label
 from muddled.utils import LabelType, LabelTag, DirType
 from muddled.withdir import Directory
+
+import logging
+def log(*args):
+    logging.getLogger(__name__).warning(" ".join(args))
 
 def our_cmd(cmd_list, error_ok=True):
     """Command processing for calculating muddle version
@@ -69,9 +74,9 @@ def show_version():
                 branch = None
 
         if branch:
-            print '%s on branch %s in %s'%(version, branch, muddle_dir)
+            log('%s on branch %s in %s'%(version, branch, muddle_dir))
         else:
-            print '%s in %s'%(version, muddle_dir)
+            log('%s in %s'%(version, muddle_dir))
 
 def find_and_load(specified_root, muddle_binary):
     """Find our .muddle root, and then load our builder, and return it.
@@ -86,11 +91,11 @@ def find_and_load(specified_root, muddle_binary):
             builder = None
         return builder
     except utils.MuddleBug:
-        print "Error trying to find build tree"
+        log("Error trying to find build tree")
         raise
     except utils.GiveUp:
-        print "Failure trying to load build tree"
-        print traceback.format_exc()
+        log("Failure trying to load build tree")
+        log(traceback.format_exc())
         raise
 
 def lookup_command(command_name, args, cmd_dict, subcmd_dict):
@@ -229,6 +234,13 @@ def _cmdline(args, current_dir, original_env, muddle_binary):
         args = args[1:]
     else:
         guess_what_to_do = True
+
+    root, domain = utils.find_root_and_domain(specified_root)
+    if root:
+        logs.init(root)
+    else:
+        logs.init()
+
 
     # Are we in a muddle build?
     builder = find_and_load(specified_root, muddle_binary)

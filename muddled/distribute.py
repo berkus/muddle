@@ -46,7 +46,13 @@ from muddled.licenses import get_gpl_checkouts, get_implicit_gpl_checkouts, \
 from muddled.withdir import Directory
 import muddled.db as db
 
+import logging
+def log(*args, **kwargs):
+    args = [str(arg) for arg in args]
+    logging.getLogger(__name__).warning(' '.join(args))
+
 logger = logging.getLogger('muddled.distribute')
+logger.setLevel(logging.DEBUG)
 
 VERBOSE=False       # should copy_without be quiet
 
@@ -275,7 +281,7 @@ def _distribute_checkout(builder, actual_names, label, copy_vcs=False):
     source_label = label.copy_with_tag(LabelTag.CheckedOut)
     target_label = label.copy_with_tag(LabelTag.Distributed, transient=True)
 
-    logger.debug('   target', target_label)
+    logger.debug('   target %s' % target_label)
 
     # Making our target label transient means that its tag will not be
     # written out to the muddle database (i.e., .muddle/tags/...) when
@@ -429,7 +435,7 @@ def distribute_checkout_files(builder, name, label, source_files):
     source_label = label.copy_with_tag(LabelTag.CheckedOut)
     target_label = label.copy_with_tag(LabelTag.Distributed, transient=True)
 
-    logger.debug('   target', target_label)
+    logger.debug('   target %s' % target_label)
 
     # Making our target label transient means that its tag will not be
     # written out to the muddle database (i.e., .muddle/tags/...) when
@@ -528,7 +534,7 @@ def distribute_build_desc(builder, name, label, copy_vcs=False):
     this_dir = builder.db.get_checkout_path(label)
     dist_file = os.path.join('_distribution', '%s.py'%name)
     if os.path.exists(os.path.join(this_dir, dist_file)):
-        print 'Found replacement build description for distribution "%s"'%name
+        log('Found replacement build description for distribution "%s"'%name)
         # We never copy VCS in this situation
         copy_vcs = False
         replacement_build_desc = dist_file
@@ -547,20 +553,20 @@ def distribute_build_desc(builder, name, label, copy_vcs=False):
                 # for the build description, as that's not an unreasonable way to
                 # license it, but distributing it is not normally expected to be a
                 # problem. However, give a warning just in case.
-                print
-                print 'WARNING: DISTRIBUTING BUILD DESCRIPTION DESPITE LICENSE CLASH'
+                log()
+                log('WARNING: DISTRIBUTING BUILD DESCRIPTION DESPITE LICENSE CLASH')
                 text = str(e)
                 for line in text.split('\n'):
-                    print ' ', line
-                print 'END OF WARNING'
-                print
+                    log(' ', line)
+                log('END OF WARNING')
+                log()
             else:
                 raise
 
     source_label = label.copy_with_tag(LabelTag.CheckedOut)
     target_label = label.copy_with_tag(LabelTag.Distributed, transient=True)
 
-    logger.debug('   target', target_label)
+    logger.debug('   target %s' % target_label)
 
     # Making our target label transient means that its tag will not be
     # written out to the muddle database (i.e., .muddle/tags/...) when
@@ -659,7 +665,7 @@ def set_private_build_files(builder, name, private_files):
     source_label = label.copy_with_tag(LabelTag.CheckedOut)
     target_label = label.copy_with_tag(LabelTag.Distributed, transient=True)
 
-    logger.debug('   target', target_label)
+    logger.debug('   target %s' % target_label)
 
     # Making our target label transient means that its tag will not be
     # written out to the muddle database (i.e., .muddle/tags/...) when
@@ -777,7 +783,7 @@ def distribute_package(builder, name, label, obj=False, install=True,
         source_label = pkg_label.copy_with_tag(LabelTag.PostInstalled)
         target_label = pkg_label.copy_with_tag(LabelTag.Distributed, transient=True)
 
-        logger.debug('   target', target_label)
+        logger.debug('   target %s' % target_label)
 
         # Making our target label transient means that its tag will not be
         # written out to the muddle database (i.e., .muddle/tags/...) when
@@ -984,9 +990,9 @@ def _actually_distribute_normal_build_desc(builder, label, target_dir,
     with Directory(builder.db.root_path):
         for dirpath, dirnames, filenames in os.walk(co_src_rel_to_root):
 
-            logger.debug('--', dirpath)
+            logger.debug('-- %s' % dirpath)
             for name in filenames:
-                logger.debug('--', name)
+                logger.debug('-- %s' % name)
                 if name in files_to_ignore:           # Maybe ignore VCS files
                     continue
                 base, ext = os.path.splitext(name)
@@ -999,12 +1005,12 @@ def _actually_distribute_normal_build_desc(builder, label, target_dir,
                 if not os.path.exists(tgt_dir):
                     os.makedirs(tgt_dir)
 
-                logger.debug('--', src_path)
-                logger.debug('--', tgt_dir)
-                logger.debug('--', tgt_path)
+                logger.debug('-- %s' % src_path)
+                logger.debug('-- %s' % tgt_dir)
+                logger.debug('-- %s' % tgt_path)
 
                 if src_path in private_files:
-                    logger.debug('Replacing private file', src_path)
+                    logger.debug('Replacing private file %s' % src_path)
                     with open(tgt_path, 'w') as fd:
                         fd.write("def describe_private(builder, *args, **kwargs):\n    pass\n")
                 else:
@@ -1379,6 +1385,9 @@ class DistributeCheckout(DistributeAction):
     def build_label(self, builder, label):
         name, target_dir = builder.get_distribution()
 
+        logger.warning("dict: %s" % self.distributions)
+        logger.warning("key: %s" % name)
+
         copy_vcs, just = self.distributions[name]
 
 
@@ -1643,7 +1652,7 @@ def _add_build_descriptions(builder, name, domains, copy_vcs=False):
     logger.debug('Adding build descriptions')
     for domain in sort_domains(cumulative_domains):
         co_label = _build_desc_label_in_domain(builder, domain, LabelTag.Distributed)
-        logger.debug('-- Build description', co_label)
+        logger.debug('-- Build description %s' % co_label)
         distribute_build_desc(builder, name, co_label, copy_vcs)
         extra_labels.append(co_label)
     logger.debug('Done')
@@ -1685,7 +1694,7 @@ def _copy_muddle_skeleton(builder, name, target_dir, domains):
     tgt_root = target_dir
 
     for domain in sort_domains(domains):
-        logger.debug('.muddle skeleton for domain:', domain)
+        logger.debug('.muddle skeleton for domain: %s' % domain)
 
         if not domain:
             src_dir = os.path.join(src_root, '.muddle')
@@ -1825,13 +1834,13 @@ def select_all_gpl_checkouts(builder, name, with_vcs, just_from=None):
         warning_messages.extend(warnings)
 
     if warning_messages:
-        print
-        print 'WARNING: SOME GPL CHECKOUTS SEEM TO DEPEND ON NON-OPEN SOURCE CHECKOUTS'
+        log()
+        log('WARNING: SOME GPL CHECKOUTS SEEM TO DEPEND ON NON-OPEN SOURCE CHECKOUTS')
         for msg in warning_messages:
-            print msg
-        print 'The non-open source checkouts will not be distributed.'
-        print 'END OF WARNING'
-        print
+            log(msg)
+        log('The non-open source checkouts will not be distributed.')
+        log('END OF WARNING')
+        log()
 
     all_checkouts = gpl_checkouts | imp_checkouts | dependencies
     if just_from:
@@ -1962,7 +1971,7 @@ def distribute(builder, name, target_dir, with_versions_dir=False,
     if name not in the_distributions.keys():
         raise GiveUp('There is no distribution called "%s"'%name)
 
-    print 'Writing distribution', name, 'to', target_dir
+    log('Writing distribution', name, 'to', target_dir)
 
     # =========================================================================
     # PREPARE
@@ -2067,7 +2076,7 @@ def distribute(builder, name, target_dir, with_versions_dir=False,
                 _maybe_add_license_file(builder, name, target, distribution_labels)
 
     if not distribution_labels:
-        print 'Nothing to distribute for %s'%name
+        log('Nothing to distribute for %s'%name)
         return
 
     # -------------------------------------------------------------------------
@@ -2111,8 +2120,8 @@ def distribute(builder, name, target_dir, with_versions_dir=False,
             problem = report_license_clashes_in_role(builder, role, just_report_private=True)
             if problem:
                 role_clash = True
-                print 'which means there will probably be private binaries in install/%s'%role
-                print
+                log('which means there will probably be private binaries in install/%s'%role)
+                log()
         if role_clash:
             raise GiveUp('License clashes prevent "%s" distribution'%name)
 
@@ -2140,7 +2149,7 @@ def distribute(builder, name, target_dir, with_versions_dir=False,
             maxlen = max(maxlen,len(str(label)))
         for label in distribution_labels:
             rule = builder.ruleset.map[label]
-            print '%-*s %s'%(maxlen, label, rule.action)
+            log('%-*s %s'%(maxlen, label, rule.action))
         return
 
     # =========================================================================
@@ -2156,7 +2165,7 @@ def distribute(builder, name, target_dir, with_versions_dir=False,
         # Copy over the versions directory, if any
         _copy_versions_dir(builder, name, target_dir, with_vcs)
 
-    print 'Building %d /distribute label%s'%(num_labels,
-            '' if num_labels==1 else 's')
+    log('Building %d /distribute label%s'%(num_labels,
+            '' if num_labels==1 else 's'))
     for label in distribution_labels:
         builder.build_label(label)

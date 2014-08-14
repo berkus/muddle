@@ -60,6 +60,10 @@ from muddled.depend import Label
 import os
 import re
 
+import logging
+def log(*args, **kwargs):
+    args = [str(arg) for arg in args]
+    logging.getLogger(__name__).warning(' '.join(args))
 
 g_moduledb_re = re.compile(r'modules\..*')
 g_kmodule_re  = re.compile(r'.*\.ko')
@@ -124,9 +128,9 @@ class MergeDepModBuilder(PackageBuilder):
                 root_dir = builder.package_install_path(tmp)
                 dirlist.append( (root_dir, s) )
 
-                print "dirlist:"
+                log("dirlist:")
                 for (x,y) in dirlist:
-                    print "%s=%s \n"%(x,y)
+                    log("%s=%s \n"%(x,y))
 
 
         if (tag == utils.LabelTag.PreConfig):
@@ -158,7 +162,7 @@ class MergeDepModBuilder(PackageBuilder):
             our_re = re.compile(r'\d+\.\d+\..*')
             for n in names:
                 if (our_re.match(n) is not None):
-                    print "Found kernel version %s in %s .. "%(n, our_dir)
+                    log("Found kernel version %s in %s .. "%(n, our_dir))
                     utils.run0("%s -b %s %s"%(depmod, our_dir, n))
 
         elif (tag == utils.LabelTag.Installed):
@@ -169,7 +173,7 @@ class MergeDepModBuilder(PackageBuilder):
             utils.copy_name_list_with_dirs(names, our_dir, tgt_dir)
             for n in names:
                 new_n = utils.replace_root_name(our_dir, tgt_dir, n)
-                print "Installed: %s"%(new_n)
+                log("Installed: %s"%(new_n))
 
         elif (tag == utils.LabelTag.Clean):
             utils.recursively_remove(our_dir)

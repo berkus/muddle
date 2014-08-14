@@ -19,6 +19,11 @@ import muddled.deployment as deployment
 
 from muddled.depend import Action
 
+import logging
+def log(*args, **kwargs):
+    args = [str(arg) for arg in args]
+    logging.getLogger(__name__).warning(' '.join(args))
+
 class ToolsDeploymentBuilder(Action):
     """
     Copy the dependent roles into the tools deployment.
@@ -41,7 +46,7 @@ class ToolsDeploymentBuilder(Action):
         utils.ensure_dir(deploy_dir)
 
         for role in self.dependent_roles:
-            print "> %s: Deploying role %s .."%(label.name, role)
+            log("> %s: Deploying role %s .."%(label.name, role))
             install_dir = builder.role_install_path(role,
                                                                domain = label.domain)
             # We do want an exact copy here - this is a copy from the install

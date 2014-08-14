@@ -11,6 +11,11 @@ import stat
 import muddled.utils as utils
 import muddled.filespec as filespec
 
+import logging
+def log(*args, **kwargs):
+    args = [str(arg) for arg in args]
+    logging.getLogger(__name__).warning(' '.join(args))
+
 class File(object):
     """
     Represents a file in a CPIO archive.
@@ -330,7 +335,7 @@ class CpioFileDataProvider(filespec.FileSpecDataProvider):
                 break
 
         if (obj is None):
-            print "> Warning: No files in %s [vroot = %s] in this cpio archive.. "%(dir,vroot)
+            log("> Warning: No files in %s [vroot = %s] in this cpio archive.. "%(dir,vroot))
             return [ ]
 
         # Read everything in this directory.
@@ -602,7 +607,7 @@ class Archive(object):
             hdr_array.append("%08x"%0)
 
             if (logProgress):
-                print "> Packing %s .. "%(f.name)
+                log("> Packing %s .. "%(f.name))
 
             f_out.write("".join(hdr_array))
             f_out.write(f.name)

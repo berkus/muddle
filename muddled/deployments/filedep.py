@@ -17,6 +17,11 @@ from muddled.depend import Action
 from muddled.deployments.collect import InstructionImplementor, \
         CollectApplyChown, CollectApplyChmod
 
+import logging
+def log(*args, **kwargs):
+    args = [str(arg) for arg in args]
+    logging.getLogger(__name__).warning(' '.join(args))
+
 class FIApplyChmod(CollectApplyChmod):
 
     # XXX Why is this different than for collect?
@@ -125,9 +130,9 @@ class FileDeploymentBuilder(Action):
 
         for role, domain in self.roles:
             if domain:
-                print "> %s: Deploying role %s in domain %s .. "%(label.name, role, domain)
+                log("> %s: Deploying role %s in domain %s .. "%(label.name, role, domain))
             else:
-                print "> %s: Deploying role %s .. "%(label.name, role)
+                log("> %s: Deploying role %s .. "%(label.name, role))
             install_dir = builder.role_install_path(role, domain = domain)
             utils.recursively_copy(install_dir, deploy_dir, object_exactly=True)
 
@@ -160,7 +165,7 @@ class FileDeploymentBuilder(Action):
                                             "instruction %s"%iname +
                                             " found in label %s (filename %s)"%(lbl, fn))
 
-        print "Rerunning muddle to apply instructions .. "
+        log("Rerunning muddle to apply instructions .. ")
 
         permissions_label = depend.Label(utils.LabelType.Deployment,
                                          label.name, None, # XXX label.role,
@@ -168,7 +173,7 @@ class FileDeploymentBuilder(Action):
                                          domain = label.domain)
 
         if need_root_for:
-            print "I need root to do %s - sorry! - running sudo .."%(', '.join(sorted(need_root_for)))
+            log("I need root to do %s - sorry! - running sudo .."%(', '.join(sorted(need_root_for))))
             # The following works on the assumption that multiple muddles run using a single terminal
             # for output and (more significantly in this case) input. If muddle changes to only have
             # manually started helper processes in different threads then the pause mechanism should
@@ -191,11 +196,11 @@ class FileDeploymentBuilder(Action):
             deploy_dir = builder.deploy_path(label)
             instr_list = builder.load_instructions(lbl)
             for (lbl, fn, instrs) in instr_list:
-                print "File deployment: Applying instructions for role %s, label %s .. "%(role, lbl)
+                log("File deployment: Applying instructions for role %s, label %s .. "%(role, lbl))
                 for instr in instrs:
                     # Obey this instruction.
                     iname = instr.outer_elem_name()
-                    print 'Instruction:', iname
+                    log('Instruction:', iname)
                     if iname in self.app_dict:
                         self.app_dict[iname].apply(builder, instr, role, deploy_dir)
                     else:

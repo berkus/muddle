@@ -29,6 +29,11 @@ from StringIO import StringIO
 import cPickle
 import muddled
 
+import logging
+def log(*args, **kwargs):
+    args = [str(arg) for arg in args]
+    logging.getLogger(__name__).warning(' '.join(args))
+
 try:
     import curses
 except:
@@ -252,7 +257,7 @@ def domain_rel_path_to_parenth(domain):
             list = list[:-1]
         return dom_parenth
     except:
-        print domain
+        log(domain)
         raise
 
 def string_cmp(a,b):
@@ -555,7 +560,7 @@ def ensure_dir(dir, verbose=True):
         raise MuddleBug("%s exists but is not a directory"%dir)
     else:
         if verbose:
-            print "> Make directory %s"%dir
+            log("> Make directory %s"%dir)
         os.makedirs(dir)
 
 def pad_to(str, val, pad_with = " "):
@@ -949,7 +954,7 @@ def page_text(progname, text):
                     # We're not allowed to run it, or some other problem,
                     # so look for another candidate
                     continue
-    print text
+    log(text)
 
 def indent(text, indent):
     """Return the text indented with the 'indent' string.
@@ -1410,10 +1415,10 @@ def copy_without(src, dst, without=None, object_exactly=True, preserve=False,
         ignored_names = set()
 
     if verbose:
-        print 'Copying %s to %s'%(src, dst),
+        log('Copying %s to %s'%(src, dst), end=' ')
         if without:
-            print 'ignoring %s'%without
-        print
+            log('ignoring %s'%without)
+        log()
 
     _copy_without(src, dst, ignored_names, object_exactly, preserve, force)
 

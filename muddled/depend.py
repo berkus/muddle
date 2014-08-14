@@ -10,6 +10,11 @@ from muddled import utils
 from muddled.utils import GiveUp, MuddleBug, label_type_to_tag, LabelType, \
         sort_domains, total_ordering
 
+import logging
+def log(*args, **kwargs):
+    args = [str(arg) for arg in args]
+    logging.getLogger(__name__).warning(' '.join(args))
+
 @total_ordering
 class Label(object):
     """
@@ -697,16 +702,16 @@ class Label(object):
 
         """
         if self._unswept:
-            if verbose: print 'sweep: %s -> '%str(self),
+            if verbose: log('sweep: %s -> '%str(self), end=' ')
             if self._domain:
                 self._domain = '%s(%s)'%(domain, self._domain)
             else:
                 self._domain = domain
             self._unswept = False
-            if verbose: print str(self)
+            if verbose: log(str(self))
 
         elif verbose:
-            print 'sweep: %s ignored'%str(self)
+            log('sweep: %s ignored'%str(self))
 
     @staticmethod
     def _check_part(what_part, value):
@@ -1410,9 +1415,9 @@ class RuleSet(object):
                 new_v.replace_target(copied_source)
                 new_k = copied_source
                 if False:
-                    print "Ruleset: rewrite src = %s\n" \
+                    log("Ruleset: rewrite src = %s\n" \
                           "                   k = %s\n" \
-                          "                    to %s"%(source,k,copied_source)
+                          "                    to %s"%(source,k,copied_source))
             else:
                 new_k = k
 
@@ -1655,7 +1660,7 @@ def needed_to_build_labels(ruleset, target_list, useTags = True, useMatch = Fals
         done_something = False
 
         if trace:
-            print "\n> Loop"
+            log("\n> Loop")
 
         # Remove anything we've already satisfied from our list of targets.
         targets = targets - rule_target_set
@@ -1664,11 +1669,11 @@ def needed_to_build_labels(ruleset, target_list, useTags = True, useMatch = Fals
         if len(targets) == 0:
             # Yep!
             if trace:
-                print
-                print "To build %s we need:" % target_list
+                log()
+                log("To build %s we need:" % target_list)
                 for r in rule_list:
-                    print '    %s'%r
-                print
+                    log('    %s'%r)
+                log()
             return rule_list
 
         # In that case, we need to go through all the dependencies of the
@@ -1677,7 +1682,7 @@ def needed_to_build_labels(ruleset, target_list, useTags = True, useMatch = Fals
 
         for tgt in targets:
             if trace:
-                print "\nLooking at target %s"%tgt
+                log("\nLooking at target %s"%tgt)
             rules = ruleset.rules_for_target(tgt, useTags)
             # useMatch has a default argument of True and overrides the useTags flag
             if rules is None:
@@ -1697,18 +1702,18 @@ def needed_to_build_labels(ruleset, target_list, useTags = True, useMatch = Fals
                 raise MuddleBug("Rule list is empty for target %s"%tgt)
 
             if trace:
-                print "Rules for %s:"%tgt
+                log("Rules for %s:"%tgt)
                 for r in rules:
-                    print '    %s'%r
+                    log('    %s'%r)
 
             rule = None
             for rule in rules:
                 if trace:
-                    print "Looking at rule %s"%rule
+                    log("Looking at rule %s"%rule)
                 for dep in rule.deps:
                     if dep not in rule_target_set:
                         if trace:
-                            print "  Cannot build %s because it needs %s"%(tgt, dep)
+                            log("  Cannot build %s because it needs %s"%(tgt, dep))
                             # .. and we can't build this target until we have.
 
                         # We need to satisfy this dependency, so add it
@@ -1716,21 +1721,21 @@ def needed_to_build_labels(ruleset, target_list, useTags = True, useMatch = Fals
                         # detect circular dependencies.
                         if dep not in new_targets and dep not in targets:
                             if trace:
-                                print "  Add new target %s"%str(dep)
+                                log("  Add new target %s"%str(dep))
                             new_targets.add(dep)
                             done_something = True
                         elif trace:
-                            if dep in targets: print "  ..already in targets"
-                            if dep in new_targets: print "  ..already in new_targets"
+                            if dep in targets: log("  ..already in targets")
+                            if dep in new_targets: log("  ..already in new_targets")
 
                         can_build_target = False
 
             if can_build_target:
                 # All dependencies are already satisfied, so we can ..
                 if trace:
-                    print "Add build rule: target %s"%tgt
+                    log("Add build rule: target %s"%tgt)
                     for rule in rules:
-                        print "                rule %s"%rule
+                        log("                rule %s"%rule)
                 for rule in rules:
                     rule_list.append(rule)
                 rule_target_set.add(tgt)

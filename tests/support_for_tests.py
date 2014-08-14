@@ -570,7 +570,7 @@ class DirTree(object):
         return str(self) == str(other)
 
     def assert_same(self, other_path, onedown=False, unwanted_files=None,
-                    unwanted_extensions=None):
+                    unwanted_extensions=None, ignore_files=['.muddle/tag_db', '.muddle/log*']):
         """Compare this DirTree and the DirTree() for 'other_path'.
 
         Thus 'other_path' should be a path. A temporary DirTree will
@@ -616,9 +616,13 @@ class DirTree(object):
         This is really the method for which I wrote this class. It allows
         convenient comparison of two directories, a source and a target.
         """
+        if not unwanted_files:
+            unwanted_files = []
+        if not ignore_files:
+            ignore_files = []
         other = DirTree(other_path, self.fold_dirs, self.indent)
-        this_lines = self.as_lines(onedown, unwanted_files)
-        that_lines = other.as_lines(onedown)
+        this_lines = self.as_lines(onedown, unwanted_files+ignore_files)
+        that_lines = other.as_lines(onedown, ignore_files)
 
         self._same_as(this_lines, that_lines, other.path,
                       unwanted_files=None, unwanted_extensions=None)

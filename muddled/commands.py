@@ -59,6 +59,11 @@ from muddled.distribute import distribute, the_distributions, \
         get_distribution_names, get_used_distribution_names
 from muddled.withdir import Directory, NewDirectory
 
+import logging
+def log(*args, **kwargs):
+    args = [str(arg) for arg in args]
+    logging.getLogger(__name__).warning(' '.join(args))
+
 logger = logging.getLogger("muddled.commands")
 
 # Following Richard's naming conventions...
@@ -182,7 +187,7 @@ class Command(object):
     # Our switches are held as a dictionary whose keys are the allowed
     # switches, and whose values are the token to put into self.switches
     # if we encounter that switch
-    allowed_switches = {'-debug':'debug', '-info':'info'}
+    allowed_switches = {}
 
     # A list of the switches we were given, held as the first element
     # from one of the 'allowed_switches' tuples
@@ -251,11 +256,6 @@ class Command(object):
                 break
             args = args[1:]
 
-        if 'debug' in self.switches:
-            logging.getLogger().setLevel(logging.DEBUG)
-        elif 'info' in self.switches:
-            logging.getLogger().setLevel(logging.INFO)
-
         if args and not allowed_more:
             raise GiveUp('Unexpected trailing arguments "%s"'%' '.join(args))
         return args
@@ -312,13 +312,13 @@ class Command(object):
         """
         dir, domain = utils.find_root_and_domain(current_dir)
         if dir:
-            print
-            print 'Found a .muddle directory in %s'%dir
+            log()
+            log('Found a .muddle directory in %s'%dir)
             if dir == current_dir:
-                print '(which is the current directory)'
+                log('(which is the current directory)')
             else:
-                print 'The current directory is     %s'%current_dir
-            print
+                log('The current directory is     %s'%current_dir)
+            log()
             got_src = os.path.exists(os.path.join(dir,'src'))
             got_dom = os.path.exists(os.path.join(dir,'domains'))
             if got_src or got_dom:
@@ -333,10 +333,10 @@ class Command(object):
                 extra += 'alongside it'
             else:
                 extra = ''
-            print utils.wrap('This presumably means that the current directory is'
+            log(utils.wrap('This presumably means that the current directory is'
                              ' inside a broken or partial build. Please fix this'
                              ' (e.g., by deleting the ".muddle/" directory%s)'
-                             ' before retrying the "%s" command.'%(extra, self.cmd_name))
+                             ' before retrying the "%s" command.'%(extra, self.cmd_name)))
             raise GiveUp(retcode=4)
 
 
@@ -382,8 +382,8 @@ class CPDCommand(Command):
         labels = self.expand_labels(builder, args)
 
         if self.no_op():
-            print 'Asked to %s:\n  %s'%(self.cmd_name,
-                    label_list_to_string(labels, join_with='\n  '))
+            log('Asked to %s:\n  %s'%(self.cmd_name,
+                    label_list_to_string(labels, join_with='\n  ')))
             return
 
         self.build_these_labels(builder, labels)
@@ -746,11 +746,11 @@ class AnyLabelCommand(Command):
         # We don't sort the list - we keep it in the order given
 
         if self.no_op():
-            print 'Asked to %s:\n  %s'%(self.cmd_name,
-                    label_list_to_string(labels, join_with='\n  '))
+            log('Asked to %s:\n  %s'%(self.cmd_name,
+                    label_list_to_string(labels, join_with='\n  ')))
             return
         elif not args:
-            print '%s %s'%(self.cmd_name, label_list_to_string(labels))
+            log('%s %s'%(self.cmd_name, label_list_to_string(labels)))
 
         self.build_these_labels(builder, labels)
 
@@ -779,11 +779,11 @@ class AnyLabelCommand(Command):
             if not used_labels:
                 # XXX =====================================
                 if args:
-                    print 'Arguments (shown one per line) were:'
+                    log('Arguments (shown one per line) were:')
                     for arg in args:
-                        print '  ', arg
+                        log('  ', arg)
                 else:
-                    print 'There were no arguments,implicit or explicit'
+                    log('There were no arguments,implicit or explicit')
                 # XXX =====================================
                 if len(labels) == 1:
                     raise GiveUp("Label %s, from argument '%s', is"
@@ -824,23 +824,23 @@ def build_a_kill_b(builder, labels, build_this, kill_this):
     for lbl in labels:
         try:
             l_a = lbl.copy_with_tag(build_this)
-            print "Building: %s .. "%(l_a)
+            log("Building: %s .. "%(l_a))
             builder.build_label(l_a)
         except GiveUp as e:
             raise GiveUp("Can't build %s: %s"%(l_a, e))
 
         try:
             l_b = lbl.copy_with_tag(kill_this)
-            print "Killing: %s .. "%(l_b)
+            log("Killing: %s .. "%(l_b))
             builder.kill_label(l_b)
         except GiveUp as e:
             raise GiveUp("Can't kill %s: %s"%(l_b, e))
 
 def kill_labels(builder, to_kill):
     if len(to_kill) == 1:
-        print "Killing %s"%to_kill[0]
+        log("Killing %s"%to_kill[0])
     else:
-        print "Killing %d labels"%len(to_kill)
+        log("Killing %d labels"%len(to_kill))
 
     try:
         for lbl in to_kill:
@@ -848,7 +848,7 @@ def kill_labels(builder, to_kill):
     except GiveUp, e:
         raise GiveUp("Can't kill %s - %s"%(str(lbl), e))
 
-# def builder.build_labels(to_build, master=True):
+# def build_labels(to_build, master=True):
 #     if len(to_build) == 1:
 #         print "Building %s"%to_build[0]
 #     else:
@@ -1569,12 +1569,12 @@ class Init(Command):
         repo = args[0]
         build = args[1]
 
-        print "Initialising build tree in %s "%current_dir
-        print "Repository: %s"%repo
-        print "Build description: %s"%build
+        log("Initialising build tree in %s "%current_dir)
+        log("Repository: %s"%repo)
+        log("Build description: %s"%build)
 
         if branch_name:
-            print "Build description branch: %s"%branch_name
+            log("Build description branch: %s"%branch_name)
 
         if self.no_op():
             return
@@ -1582,8 +1582,8 @@ class Init(Command):
         db = Database(current_dir)
         db.setup(repo, build, branch=branch_name)
 
-        print
-        print "Loading build description .. \n"
+        log()
+        log("Loading build description .. \n")
         builder = mechanics.load_builder(current_dir, muddle_binary)
 
         # If our top level build description wants things to follow its
@@ -1601,12 +1601,12 @@ class Init(Command):
                 build_desc = builder.db.get_domain_build_desc_label(domain)
                 subdomain_build_descs.append(build_desc)
             if subdomain_build_descs:
-                print 'Making subdomain build descriptions "follow" top-level build description'
-                print 'for', label_list_to_string(subdomain_build_descs)
+                log('Making subdomain build descriptions "follow" top-level build description')
+                log('for', label_list_to_string(subdomain_build_descs))
                 sync = Sync()
                 sync.with_build_tree(builder, current_dir, map(str, subdomain_build_descs))
 
-        print "Done.\n"
+        log("Done.\n")
 
 
 @command('bootstrap', CAT_INIT)
@@ -1690,7 +1690,7 @@ class Bootstrap(Command):
         """
 
         if args and args[0] == '-subdomain':
-            print 'You are not currently within a build tree. "-subdomain" ignored'
+            log('You are not currently within a build tree. "-subdomain" ignored')
             args = args[1:]
 
         self.bootstrap(current_dir, args)
@@ -1708,19 +1708,19 @@ class Bootstrap(Command):
         build_desc = "builds/%s"%build_desc_filename
         build_dir = os.path.join("src","builds")
 
-        print "Bootstrapping build tree in %s "%root_path
-        print "Repository: %s"%repo
-        print "Build description: %s"%build_desc
+        log("Bootstrapping build tree in %s "%root_path)
+        log("Repository: %s"%repo)
+        log("Build description: %s"%build_desc)
 
         if self.no_op():
             return
 
-        print
-        print "Setting up database"
+        log()
+        log("Setting up database")
         db = Database(root_path)
         db.setup(repo, build_desc, versions_repo=os.path.join(repo,"versions"))
 
-        print "Setting up build description"
+        log("Setting up build description")
         build_desc_text = '''\
                              #! /usr/bin/env python
                              """Muddle build description for {name}
@@ -1739,22 +1739,22 @@ class Bootstrap(Command):
             # TODO: (a) do this properly and (b) do it for other VCS as necessary
             vcs_name, just_url = version_control.split_vcs_url(repo)
             if vcs_name == 'git':
-                print 'Hack for git: ignore .pyc files in src/builds'
+                log('Hack for git: ignore .pyc files in src/builds')
                 with open('.gitignore', "w") as fd:
                     fd.write('*.pyc\n')
 
             if vcs_name != 'svn':
-                print 'Adding build description to VCS'
+                log('Adding build description to VCS')
                 version_control.vcs_init_directory(vcs_name, ["01.py"])
                 if vcs_name == 'git':
                     version_control.vcs_init_directory(vcs_name, [".gitignore"])
 
-        print 'Telling muddle the build description is checked out'
+        log('Telling muddle the build description is checked out')
         build_desc_label = Label.from_string('checkout:builds/checked_out')
         db.set_tag(build_desc_label)
 
         # Now let's actually load the build description
-        print 'Loading it'
+        log('Loading it')
         builder = mechanics.load_builder(root_path, None)
 
         # And we can make sure that the build description is correctly
@@ -1762,7 +1762,7 @@ class Bootstrap(Command):
         vcs_handler = builder.db.get_checkout_vcs(build_desc_label)
         vcs_handler.reparent(builder, build_desc_label)
 
-        print 'Setting up versions directory'
+        log('Setting up versions directory')
         with NewDirectory("versions"):
             # We shan't try to do anything more (than create the directory) for
             # subversion, firstly because the versions repository is not (yet)
@@ -1770,10 +1770,10 @@ class Bootstrap(Command):
             # mean doing an import, or somesuch, which we don't have a
             # "general" mechanism for.
             if vcs_name != 'svn':
-                print 'Adding versions directory to VCS'
+                log('Adding versions directory to VCS')
                 version_control.vcs_init_directory(vcs_name)
 
-        print "Done.\n"
+        log("Done.\n")
 
 # -----------------------------------------------------------------------------
 # Proper query commands (not help)
@@ -1839,8 +1839,8 @@ class QueryDepend(QueryCommand):
 
     def with_build_tree(self, builder, current_dir, args):
         if len(args) != 1 and len(args) != 2:
-            print "Syntax: muddle query dependencies [system|user|all][-short] [<label>]"
-            print self.__doc__
+            log("Syntax: muddle query dependencies [system|user|all][-short] [<label>]")
+            log(self.__doc__)
             return
 
         type = args[0]
@@ -1875,12 +1875,12 @@ class QueryDepend(QueryCommand):
             raise GiveUp("Bad dependency type: %s\n%s"%(type, self.__doc__))
 
         if label:
-            print 'Dependencies for %s'%label
+            log('Dependencies for %s'%label)
         else:
-            print 'All dependencies'
-        print builder.ruleset.to_string(matchLabel = label,
+            log('All dependencies')
+        log(builder.ruleset.to_string(matchLabel = label,
                                                    showSystem = show_sys, showUser = show_user,
-                                                   ignore_empty = ignore_empty)
+                                                   ignore_empty = ignore_empty))
 
 @subcommand('query', 'distributions', CAT_QUERY)
 class QueryDistributions(QueryCommand):
@@ -1898,20 +1898,20 @@ class QueryDistributions(QueryCommand):
         all_names = get_distribution_names()
         used_names = get_used_distribution_names(builder)
         maxlen = len(max(all_names, key=len))
-        print 'Distributions are:'
+        log('Distributions are:')
         for name in sorted(all_names):
-            print '  %s %-*s  (%s)'%('*' if name in used_names else ' ',
+            log('  %s %-*s  (%s)'%('*' if name in used_names else ' ',
                                      maxlen, name,
-                                     ', '.join(the_distributions[name]))
-        print '(those marked with a "*" have content set by this build)'
+                                     ', '.join(the_distributions[name])))
+        log('(those marked with a "*" have content set by this build)')
 
     def without_build_tree(self, muddle_binary, current_dir, args):
         names = get_distribution_names()
-        print 'Standard distributions are:\n'
+        log('Standard distributions are:\n')
         maxlen = len(max(names, key=len))
         for name in sorted(names):
-            print '  %-*s  (%s)'%(maxlen, name,
-                                  ', '.join(the_distributions[name]))
+            log('  %-*s  (%s)'%(maxlen, name,
+                                  ', '.join(the_distributions[name])))
 
 @subcommand('query', 'vcs', CAT_QUERY)
 class QueryVCS(QueryCommand):
@@ -1937,7 +1937,7 @@ class QueryVCS(QueryCommand):
         str_list.append(version_control.list_registered(indent='  '))
 
         str = "".join(str_list)
-        print str
+        log(str)
         return 0
 
 @subcommand('query', 'checkouts', CAT_QUERY)
@@ -1967,9 +1967,9 @@ class QueryCheckouts(QueryCommand):
             else:
                 out_list.append(lbl.name)
         if joined:
-            print '%s'%" ".join(out_list)
+            log('%s'%" ".join(out_list))
         else:
-            print '%s'%"\n".join(out_list)
+            log('%s'%"\n".join(out_list))
 
 @subcommand('query', 'checkout-dirs', CAT_QUERY)
 class QueryCheckoutDirs(QueryCommand):
@@ -2006,8 +2006,8 @@ class QueryUpstreamRepos(QueryCommand):
 
     def with_build_tree(self, builder, current_dir, args):
         if len(args) not in (0, 1, 2):
-            print "Syntax: muddle query upstream-repos [-u[rl]] [<label>]"
-            print self.__doc__
+            log("Syntax: muddle query upstream-repos [-u[rl]] [<label>]")
+            log(self.__doc__)
             return
 
         args = self.remove_switches(args, allowed_more=True)
@@ -2190,11 +2190,11 @@ class QueryCheckoutBranches(QueryCommand):
 
         format = '%%-%ds  %%-%ds  %%-%ds  %%-%ds'%tuple(maxlen)
         line = format%(maxlen[0]*'-', maxlen[1]*'-', maxlen[2]*'-', maxlen[3]*'-')
-        print line
-        print format%('Checkout', 'Current branch', 'Original branch', 'Branch to follow')
-        print line
+        log(line)
+        log(format%('Checkout', 'Current branch', 'Original branch', 'Branch to follow'))
+        log(line)
         for line in lines:
-            print format%tuple(line)
+            log(format%tuple(line))
 
 
 @subcommand('query', 'checkout-vcs', CAT_QUERY)
@@ -2238,11 +2238,11 @@ class QueryCheckoutLicenses(QueryCommand):
 
         not_licensed = get_not_licensed_checkouts(builder)
         if not_licensed:
-            print
-            print 'The following checkouts do not have a license:'
-            print
+            log()
+            log('The following checkouts do not have a license:')
+            log()
             for label in sorted(not_licensed):
-                print '* %s'%label
+                log('* %s'%label)
 
         # Hackery
         def calc_maxlen(keys):
@@ -2258,46 +2258,46 @@ class QueryCheckoutLicenses(QueryCommand):
         gpl_licensed = get_gpl_checkouts(builder)
         get_co_license = builder.db.get_checkout_license
         if gpl_licensed:
-            print
-            print 'The following checkouts have some sort of GPL license:'
-            print
+            log()
+            log('The following checkouts have some sort of GPL license:')
+            log()
             for label in sorted(gpl_licensed):
-                print '* %-*s %r'%(maxlen, label, get_co_license(label))
+                log('* %-*s %r'%(maxlen, label, get_co_license(label)))
 
         if builder.db.license_not_affected_by or \
            builder.db.nothing_builds_against:
-            print
-            print 'Exceptions to "implicit" GPL licensing are:'
-            print
+            log()
+            log('Exceptions to "implicit" GPL licensing are:')
+            log()
             for co_label in sorted(builder.db.nothing_builds_against):
-                print '* nothing builds against %s'%co_label
+                log('* nothing builds against %s'%co_label)
             for key, value in sorted(builder.db.license_not_affected_by.items()):
-                print '* %s is not affected by %s'%(key,
-                                    label_list_to_string(sorted(value), join_with=', '))
+                log('* %s is not affected by %s'%(key,
+                                    label_list_to_string(sorted(value), join_with=', ')))
 
         implicit_gpl_licensed, because = get_implicit_gpl_checkouts(builder)
         if implicit_gpl_licensed:
-            print
-            print 'The following are "implicitly" GPL licensed for the given reasons:'
-            print
+            log()
+            log('The following are "implicitly" GPL licensed for the given reasons:')
+            log()
             for label in sorted(implicit_gpl_licensed):
                 license = get_co_license(label, absent_is_None=True)
                 reasons = because[label]
                 license = get_co_license(label, absent_is_None=True)
-                print '* %s  (was %r)'%(label, license)
+                log('* %s  (was %r)'%(label, license))
                 #print '* %-*s (was %r)'%(maxlen, label, license)
                 for reason in sorted(reasons):
-                    print '  - %s'%(reason)
+                    log('  - %s'%(reason))
 
         bad_binary, bad_private = get_license_clashes(builder, implicit_gpl_licensed)
         if bad_binary or bad_private:
-            print
-            print 'This means that the following have irreconcilable clashes:'
-            print
+            log()
+            log('This means that the following have irreconcilable clashes:')
+            log()
             for label in sorted(bad_binary):
-                print '* %-*s %r'%(maxlen, label, get_co_license(label))
+                log('* %-*s %r'%(maxlen, label, get_co_license(label)))
             for label in sorted(bad_private):
-                print '* %-*s %r'%(maxlen, label, get_co_license(label))
+                log('* %-*s %r'%(maxlen, label, get_co_license(label)))
 
 @subcommand('query', 'role-licenses', CAT_QUERY)
 class QueryRoleLicenses(QueryCommand):
@@ -2324,13 +2324,13 @@ class QueryRoleLicenses(QueryCommand):
 
         roles = builder.all_roles()
 
-        print 'Licenses by role:'
-        print
+        log('Licenses by role:')
+        log()
         for role in sorted(roles):
-            print '* %s'%role
+            log('* %s'%role)
             role_licenses = licenses_in_role(builder, role)
             for license in sorted(role_licenses):
-                print '  - %r'%( license)
+                log('  - %r'%( license))
 
         if report_clashes:
             # Hackery
@@ -2349,19 +2349,19 @@ class QueryRoleLicenses(QueryCommand):
                     # We have a clash in the licensing of the "install/" directory
                     clashes[role] = (binary_items, private_items)
             if clashes:
-                print
-                print 'The following roles have both "binary" and "private" licenses,'
-                print 'which would cause problems with a "_by_license" distribution:'
-                print
+                log()
+                log('The following roles have both "binary" and "private" licenses,')
+                log('which would cause problems with a "_by_license" distribution:')
+                log()
                 for role, (bin, sec) in sorted(clashes.items()):
-                    print '* %s, where the following licenses may cause problems:'%role
+                    log('* %s, where the following licenses may cause problems:'%role)
                     maxlen1 = calc_maxlen(sec)
                     maxlen2 = calc_maxlen(bin)
                     maxlen = max(maxlen1, maxlen2)
                     for key, item in sorted(bin.items()):
-                        print '  - %-*s %r'%(maxlen, key, item)
+                        log('  - %-*s %r'%(maxlen, key, item))
                     for key, item in sorted(sec.items()):
-                        print '  - %-*s %r'%(maxlen, key, item)
+                        log('  - %-*s %r'%(maxlen, key, item))
 
 @subcommand('query', 'licenses', CAT_QUERY)
 class QueryLicenses(QueryCommand):
@@ -2408,9 +2408,9 @@ class QueryDomains(QueryCommand):
             domains.remove('')
         domains = sort_domains(domains)
         if joined:
-            print '%s'%" ".join(domains)
+            log('%s'%" ".join(domains))
         else:
-            print '%s'%"\n".join(domains)
+            log('%s'%"\n".join(domains))
 
 @subcommand('query', 'packages', CAT_QUERY)
 class QueryPackages(QueryCommand):
@@ -2436,9 +2436,9 @@ class QueryPackages(QueryCommand):
         a_list = list(packages)
         a_list.sort()
         if joined:
-            print '%s'%" ".join(a_list)
+            log('%s'%" ".join(a_list))
         else:
-            print '%s'%"\n".join(a_list)
+            log('%s'%"\n".join(a_list))
 
 @subcommand('query', 'package-roles', CAT_QUERY)
 class QueryPackageRoles(QueryCommand):
@@ -2465,9 +2465,9 @@ class QueryPackageRoles(QueryCommand):
         a_list = list(packages)
         a_list.sort()
         if joined:
-            print '%s'%" ".join(a_list)
+            log('%s'%" ".join(a_list))
         else:
-            print '%s'%"\n".join(a_list)
+            log('%s'%"\n".join(a_list))
 
 @subcommand('query', 'deployments', CAT_QUERY)
 class QueryDeployments(QueryCommand):
@@ -2490,9 +2490,9 @@ class QueryDeployments(QueryCommand):
         a_list = list(roles)
         a_list.sort()
         if joined:
-            print '%s'%" ".join(a_list)
+            log('%s'%" ".join(a_list))
         else:
-            print '%s'%"\n".join(a_list)
+            log('%s'%"\n".join(a_list))
 
 @subcommand('query', 'default-deployments', CAT_QUERY)
 class QueryDefaultDeployments(QueryCommand):
@@ -2516,9 +2516,9 @@ class QueryDefaultDeployments(QueryCommand):
         a_list = map(str, default_deployments)
         a_list.sort()
         if joined:
-            print '%s'%" ".join(a_list)
+            log('%s'%" ".join(a_list))
         else:
-            print '%s'%"\n".join(a_list)
+            log('%s'%"\n".join(a_list))
 
 @subcommand('query', 'roles', CAT_QUERY)
 class QueryRoles(QueryCommand):
@@ -2541,9 +2541,9 @@ class QueryRoles(QueryCommand):
         a_list = list(roles)
         a_list.sort()
         if joined:
-            print '%s'%" ".join(a_list)
+            log('%s'%" ".join(a_list))
         else:
-            print '%s'%"\n".join(a_list)
+            log('%s'%"\n".join(a_list))
 
 @subcommand('query', 'default-roles', CAT_QUERY)
 class QueryDefaultRoles(QueryCommand):
@@ -2568,9 +2568,9 @@ class QueryDefaultRoles(QueryCommand):
         default_roles = list(builder.default_roles) # use a copy!
         default_roles.sort()
         if joined:
-            print '%s'%" ".join(default_roles)
+            log('%s'%" ".join(default_roles))
         else:
-            print '%s'%"\n".join(default_roles)
+            log('%s'%"\n".join(default_roles))
 
 @subcommand('query', 'root', CAT_QUERY)
 class QueryRoot(QueryCommand):
@@ -2587,7 +2587,7 @@ class QueryRoot(QueryCommand):
     """
 
     def with_build_tree(self, builder, current_dir, args):
-        print builder.db.root_path
+        log(builder.db.root_path)
 
 @subcommand('query', 'name', CAT_QUERY)
 class QueryName(QueryCommand):
@@ -2609,7 +2609,7 @@ class QueryName(QueryCommand):
     """
 
     def with_build_tree(self, builder, current_dir, args):
-        print builder.build_name
+        log(builder.build_name)
 
 @subcommand('query', 'needed-by', CAT_QUERY)     # it used to be 'deps'
 class QueryNeededBy(QueryCommand):
@@ -2626,11 +2626,11 @@ class QueryNeededBy(QueryCommand):
         label = self.get_label_from_fragment(builder, args)
         to_build = depend.needed_to_build(builder.ruleset, label, useMatch = True)
         if to_build:
-            print "Build order for %s .. "%label
+            log("Build order for %s .. "%label)
             for rule in to_build:
-                print rule.target
+                log(rule.target)
         else:
-            print "Nothing else needs building to build %s"%label
+            log("Nothing else needs building to build %s"%label)
 
 @subcommand('query', 'checkout-id', CAT_QUERY)
 class QueryCheckoutId(QueryCommand):
@@ -2674,7 +2674,7 @@ class QueryCheckoutId(QueryCommand):
         # Figure out its VCS
         vcs_handler = builder.db.get_checkout_vcs(label)
 
-        print vcs_handler.revision_to_checkout(builder, label, show_pushd=False)
+        log(vcs_handler.revision_to_checkout(builder, label, show_pushd=False))
 
 @subcommand('query', 'build-desc-branch', CAT_QUERY)
 class QueryBuildDescBranch(QueryCommand):
@@ -2692,12 +2692,12 @@ class QueryBuildDescBranch(QueryCommand):
     def with_build_tree(self, builder, current_dir, args):
 
         build_desc_branch = builder.get_build_desc_branch()
-        print 'Build description %s is on branch %s'%(builder.build_desc_label,
-                                                      build_desc_branch)
+        log('Build description %s is on branch %s'%(builder.build_desc_label,
+                                                      build_desc_branch))
         if builder.follow_build_desc_branch:
-            print '  This WILL be used as the default branch for other checkouts'
+            log('  This WILL be used as the default branch for other checkouts')
         else:
-            print '  This will NOT be used as the default branch for other checkouts'
+            log('  This will NOT be used as the default branch for other checkouts')
 
 
 @subcommand('query', 'dir', CAT_QUERY)
@@ -2725,9 +2725,9 @@ class QueryDir(QueryCommand):
         dir = find_label_dir(builder, label)
 
         if dir is not None:
-            print dir
+            log(dir)
         else:
-            print None
+            log(None)
 
 @subcommand('query', 'localroot', CAT_QUERY)
 class QueryLocalRoot(QueryCommand):
@@ -2752,21 +2752,21 @@ class QueryLocalRoot(QueryCommand):
         dir = utils.find_local_root(builder, label)
 
         if dir is not None:
-            print dir
+            log(dir)
         else:
-            print None
+            log(None)
 
         # =====================================================================
         # XXX EXTRA TEMPORARY DEBUGGING XXX
         # =====================================================================
         wild = label.copy_with_tag('*')     # Once with /*
-        print 'Instructions for', wild
+        log('Instructions for', wild)
         for lbl, path in builder.db.scan_instructions(wild):
-            print lbl, path
+            log(lbl, path)
         wild = wild.copy_with_role('*')     # Once with {*}/*
-        print 'Instructions for', wild
+        log('Instructions for', wild)
         for lbl, path in builder.db.scan_instructions(wild):
-            print lbl, path
+            log(lbl, path)
         # =====================================================================
         inst_subdir = os.path.join('instructions', label.name)
         inst_src_dir = os.path.join(builder.db.root_path, '.muddle', inst_subdir)
@@ -2775,11 +2775,11 @@ class QueryLocalRoot(QueryCommand):
             src_name = '%s.xml'%label.role
             src_file = os.path.join(inst_src_dir, src_name)
             if os.path.exists(src_file):
-                print 'Found', src_file
+                log('Found', src_file)
 
         src_file = os.path.join(inst_src_dir, '_default.xml')
         if os.path.exists(src_file):
-            print 'Found', src_file
+            log('Found', src_file)
         # =====================================================================
 
 @subcommand('query', 'env', CAT_QUERY)
@@ -2796,8 +2796,8 @@ class QueryEnv(QueryCommand):
     def with_build_tree(self, builder, current_dir, args):
         label = self.get_label_from_fragment(builder, args)
         the_env = builder.effective_environment_for(label)
-        print "Effective environment for %s .. "%label
-        print the_env.get_setvars_script(builder, label, env_store.EnvLanguage.Sh)
+        log("Effective environment for %s .. "%label)
+        log(the_env.get_setvars_script(builder, label, env_store.EnvLanguage.Sh))
 
 @subcommand('query', 'all-env', CAT_QUERY, ['envs'])       # It used to be 'env'
 class QueryEnvs(QueryCommand):
@@ -2817,10 +2817,10 @@ class QueryEnvs(QueryCommand):
 
         for (lvl, label, env) in a_list:
             script = env.get_setvars_script
-            print "-- %s [ %d ] --\n%s\n"%(label, lvl,
+            log("-- %s [ %d ] --\n%s\n"%(label, lvl,
                                            script(builder, label,
-                                                  env_store.EnvLanguage.Sh))
-        print "---"
+                                                  env_store.EnvLanguage.Sh)))
+        log("---")
 
 @subcommand('query', 'inst-details', CAT_QUERY)
 class QueryInstDetails(QueryCommand):
@@ -2838,9 +2838,9 @@ class QueryInstDetails(QueryCommand):
         label = self.get_label_from_fragment(builder, args)
         loaded = builder.load_instructions(label)
         for (l, f, i) in loaded:
-            print " --- Label %s , filename %s --- "%(l, f)
-            print i.get_xml()
-        print "-- Done --"
+            log(" --- Label %s , filename %s --- "%(l, f))
+            log(i.get_xml())
+        log("-- Done --")
 
 @subcommand('query', 'inst-files', CAT_QUERY)    # It used to be 'instructions'
 class QueryInstFiles(QueryCommand):
@@ -2858,7 +2858,7 @@ class QueryInstFiles(QueryCommand):
         label = self.get_label_from_fragment(builder, args)
         result = builder.db.scan_instructions(label)
         for (l, f) in result:
-            print "Label: %s  Filename: %s"%(l,f)
+            log("Label: %s  Filename: %s"%(l,f))
 
 @subcommand('query', 'match', CAT_QUERY)
 class QueryMatch(QueryCommand):
@@ -2884,17 +2884,17 @@ class QueryMatch(QueryCommand):
         if label.is_definite():
             #print list(all_labels)[0], '..', list(all_labels)[-1]
             if label in all_labels:
-                print 'Label %s exists'%label
+                log('Label %s exists'%label)
             else:
-                print 'Label %s does not exist'%label
+                log('Label %s does not exist'%label)
         else:
             found = False
             for item in all_labels:
                 if label.match(item):
-                    print 'Label %s matches %s'%(label, item)
+                    log('Label %s matches %s'%(label, item))
                     found = True
             if not found:
-                print 'Label %s does not match any labels'%label
+                log('Label %s does not match any labels'%label)
 
 @subcommand('query', 'make-env', CAT_QUERY)   # It used to be 'makeenv'
 class QueryMakeEnv(QueryCommand):
@@ -2926,10 +2926,10 @@ class QueryMakeEnv(QueryCommand):
                                                                useTags=True,
                                                                useMatch=True)
         if len(rule_set) == 0:
-            print 'No idea how to build %s'%label
+            log('No idea how to build %s'%label)
             return
         elif len(rule_set) > 1:
-            print 'Multiple rules for building %s'%label
+            log('Multiple rules for building %s'%label)
             return
 
         # Amend the environment as if we were about to build
@@ -2950,7 +2950,7 @@ class QueryMakeEnv(QueryCommand):
             keys = os.environ.keys()
             keys.sort()
             for key in keys:
-                print '%s=%s'%(key,os.environ[key])
+                log('%s=%s'%(key,os.environ[key]))
         finally:
             os.environ = old_env
 
@@ -2971,7 +2971,7 @@ class QueryObjdir(QueryCommand):
 
     def with_build_tree(self, builder, current_dir, args):
         label = self.get_label_from_fragment(builder, args)
-        print builder.package_obj_path(label)
+        log(builder.package_obj_path(label))
 
 @subcommand('query', 'precise-env', CAT_QUERY) # It used to be 'preciseenv'
 class QueryPreciseEnv(QueryCommand):
@@ -2989,8 +2989,8 @@ class QueryPreciseEnv(QueryCommand):
         builder.set_default_variables(label, local_store)
         local_store.merge(the_env)
 
-        print "Environment for %s .. "%label
-        print local_store.get_setvars_script(builder, label, env_store.EnvLanguage.Sh)
+        log("Environment for %s .. "%label)
+        log(local_store.get_setvars_script(builder, label, env_store.EnvLanguage.Sh))
 
 @subcommand('query', 'needs', CAT_QUERY)      # It used to be 'results'
 class QueryNeeds(QueryCommand):
@@ -3006,9 +3006,9 @@ class QueryNeeds(QueryCommand):
     def with_build_tree(self, builder, current_dir, args):
         label = self.get_label_from_fragment(builder, args)
         result = depend.required_by(builder.ruleset, label)
-        print "Labels which require %s to build .. "%label
+        log("Labels which require %s to build .. "%label)
         for lbl in result:
-            print lbl
+            log(lbl)
 
 @subcommand('query', 'rules', CAT_QUERY, ['rule'])        # It used to be 'rule'
 class QueryRules(QueryCommand):
@@ -3025,10 +3025,10 @@ class QueryRules(QueryCommand):
         label = self.get_label_from_fragment(builder, args)
         local_rule = builder.ruleset.rule_for_target(label)
         if (local_rule is None):
-            print "No ruleset for %s"%label
+            log("No ruleset for %s"%label)
         else:
-            print "Rule set for %s .. "%label
-            print local_rule
+            log("Rule set for %s .. "%label)
+            log(local_rule)
 
 @subcommand('query', 'targets', CAT_QUERY)
 class QueryTargets(QueryCommand):
@@ -3044,9 +3044,9 @@ class QueryTargets(QueryCommand):
     def with_build_tree(self, builder, current_dir, args):
         label = self.get_label_from_fragment(builder, args)
         local_rules = builder.ruleset.targets_match(label, useMatch = True)
-        print "Targets that match %s .. "%(label)
+        log("Targets that match %s .. "%(label))
         for i in local_rules:
-            print "%s"%i
+            log("%s"%i)
 
 @subcommand('query', 'unused', CAT_QUERY)
 class QueryUnused(QueryCommand):
@@ -3076,24 +3076,24 @@ class QueryUnused(QueryCommand):
                     targets = targets.union(all_deployables(builder))
                 else:
                     targets.add(Label.from_string(thing))
-            print 'Finding labels unused by:'
+            log('Finding labels unused by:')
         else:
-            print 'Finding labels unused by the default deployables:'
+            log('Finding labels unused by the default deployables:')
             targets = set(builder.default_deployment_labels)
 
         targets = list(targets)
         targets.sort()
         for label in targets:
-            print '    %s'%label
+            log('    %s'%label)
 
         all_needed_labels = set()
         for label in targets:
-            print '>>> Processing %s'%label
+            log('>>> Processing %s'%label)
             needed = depend.needed_to_build(builder.ruleset, label)
             for r in needed:
                 all_needed_labels.add(r.target)
 
-        print 'Number of "needed" labels is %d.'%len(all_needed_labels)
+        log('Number of "needed" labels is %d.'%len(all_needed_labels))
 
         search_label = Label("*", "*", "*", "*", domain="*")
         all_rules = builder.ruleset.rules_for_target(search_label)
@@ -3102,15 +3102,15 @@ class QueryUnused(QueryCommand):
             all_labels.add(r.target)
 
         if len(all_labels) == 1:
-            print 'There is just 1 label in total'
+            log('There is just 1 label in total')
         else:
-            print 'There are %d labels in total'%len(all_labels)
+            log('There are %d labels in total'%len(all_labels))
 
         all_not_needed = all_labels.difference(all_needed_labels)
         if len(all_not_needed) == 1:
-            print 'There is thus 1 label that is not "needed"'
+            log('There is thus 1 label that is not "needed"')
         else:
-            print 'There are thus %d labels that are not "needed"'%len(all_not_needed)
+            log('There are thus %d labels that are not "needed"'%len(all_not_needed))
 
         wildcarded = set()
         pulled     = set()
@@ -3129,24 +3129,24 @@ class QueryUnused(QueryCommand):
             else:
                 missing.add(l)
 
-        print '    Transient  %d'%num_transient
-        print '    Wildcarded %d'%len(wildcarded)
-        print '    /pulled    %d'%len(pulled)
-        print '    /merged    %d'%len(merged)
-        print '    Missing    %d'%len(missing)
-        print 'Transient labels are (internally) generated by muddle, and can be ignored.'
-        print 'We ignore wildcarded labels - this should be OK.'
-        print 'We ignore /pulled and /merged checkout labels.'
+        log('    Transient  %d'%num_transient)
+        log('    Wildcarded %d'%len(wildcarded))
+        log('    /pulled    %d'%len(pulled))
+        log('    /merged    %d'%len(merged))
+        log('    Missing    %d'%len(missing))
+        log('Transient labels are (internally) generated by muddle, and can be ignored.')
+        log('We ignore wildcarded labels - this should be OK.')
+        log('We ignore /pulled and /merged checkout labels.')
 
         erk = all_needed_labels.difference(all_labels)
         if len(erk):
-            print 'Number of "needed" labels that are not in "all" is %d'%len(erk)
-            print 'This is worrying. The labels concerned are:'
+            log('Number of "needed" labels that are not in "all" is %d'%len(erk))
+            log('This is worrying. The labels concerned are:')
             for l in erk:
-                print '    %s'%l
+                log('    %s'%l)
 
         if len(missing) == 0:
-            print '>>> Otherwise, there are no "unused" labels'
+            log('>>> Otherwise, there are no "unused" labels')
             return
 
         checkouts = {}
@@ -3187,9 +3187,9 @@ class QueryUnused(QueryCommand):
                 tags = d[k]
                 tags.sort()
                 tags = ', '.join(tags)
-                print '    %s/%s'%(k, tags)
+                log('    %s/%s'%(k, tags))
 
-        print '>>> Unused (missing) labels are thus:'
+        log('>>> Unused (missing) labels are thus:')
         print_labels(checkouts)
         print_labels(packages)
         print_labels(deployments)
@@ -3235,7 +3235,7 @@ class QueryKernelver(QueryCommand):
 
     def with_build_tree(self, builder, current_dir, args):
         label = self.get_label_from_fragment(builder, args)
-        print self.kernel_version(builder, label)
+        log(self.kernel_version(builder, label))
 
 @subcommand('query', 'release', CAT_QUERY)
 class QueryRelease(QueryCommand):
@@ -3303,24 +3303,24 @@ class QueryRelease(QueryCommand):
         if 'labels' in self.switches:
             if what_to_release:
                 for thing in sorted(map(str,what_to_release)):
-                    print '%s'%thing
+                    log('%s'%thing)
         else:
             if builder.is_release_build():
-                print 'This is a release build'
+                log('This is a release build')
             else:
-                print 'This is NOT a release build'
-            print 'Release spec:'
-            print '  name        = %s'%builder.release_spec.name
-            print '  version     = %s'%builder.release_spec.version
-            print '  archive     = %s'%builder.release_spec.archive
-            print '  compression = %s'%builder.release_spec.compression
-            print '  hash        = %s'%builder.release_spec.hash
-            print 'What to release (the meaning of "_release", before expansion):'
+                log('This is NOT a release build')
+            log('Release spec:')
+            log('  name        = %s'%builder.release_spec.name)
+            log('  version     = %s'%builder.release_spec.version)
+            log('  archive     = %s'%builder.release_spec.archive)
+            log('  compression = %s'%builder.release_spec.compression)
+            log('  hash        = %s'%builder.release_spec.hash)
+            log('What to release (the meaning of "_release", before expansion):')
             if what_to_release:
                 for thing in sorted(map(str,what_to_release)):
-                    print '  %s'%thing
+                    log('  %s'%thing)
             else:
-                print '  <nothing defined>'
+                log('  <nothing defined>')
 
 @command('where', CAT_QUERY, ['whereami'])
 class Whereami(Command):
@@ -3386,7 +3386,7 @@ class Whereami(Command):
         (what, label, domain) = r
 
         if detail:
-            print '%s %s %s'%(utils.ReverseDirTypeDict[what], label, domain)
+            log('%s %s %s'%(utils.ReverseDirTypeDict[what], label, domain))
             return
 
         if what is None:
@@ -3394,21 +3394,21 @@ class Whereami(Command):
                                   "'Directory type' returned as None")
 
         if what == DirType.DomainRoot:
-            print 'Root of subdomain %s'%domain
+            log('Root of subdomain %s'%domain)
         else:
             rv = "%s"%what
             if label:
                 rv = '%s for %s'%(rv, label)
             elif domain:
                 rv = '%s in subdomain %s'%(rv, domain)
-            print rv
+            log(rv)
 
     def without_build_tree(self, muddle_binary, current_dir, args):
         detail = self.want_detail(args)
         if detail:
-            print 'None None None'
+            log('None None None')
         else:
-            print "You are here. Here is not in a muddle build tree."
+            log("You are here. Here is not in a muddle build tree.")
 
 
 @command('doc', CAT_QUERY)
@@ -3615,9 +3615,9 @@ class StampSave(Command):
                 raise GiveUp("Unexpected argument '%s' for 'stamp save'"%word)
 
         if just_use_head:
-            print 'Using HEAD for all checkouts'
+            log('Using HEAD for all checkouts')
         elif force:
-            print 'Forcing original revision ids when necessary'
+            log('Forcing original revision ids when necessary')
 
         if self.no_op():
             return
@@ -3625,13 +3625,13 @@ class StampSave(Command):
         stamp, problems = VersionStamp.from_builder(builder, force, just_use_head, before=when)
 
         working_filename = '_temporary.stamp'
-        print 'Writing to',working_filename
+        log('Writing to',working_filename)
         hash = stamp.write_to_file(working_filename, version=version)
-        print 'Wrote revision data to %s'%working_filename
-        print 'File has SHA1 hash %s'%hash
+        log('Wrote revision data to %s'%working_filename)
+        log('File has SHA1 hash %s'%hash)
 
         final_name = self.decide_stamp_filename(hash, filename, problems)
-        print 'Renaming %s to %s'%(working_filename, final_name)
+        log('Renaming %s to %s'%(working_filename, final_name))
         os.rename(working_filename, final_name)
 
     def decide_stamp_filename(self, hash, basename=None, partial=False):
@@ -3743,7 +3743,7 @@ class StampVersion(Command):
                 raise GiveUp("Unexpected argument '%s' for 'stamp version'"%word)
 
         if force:
-            print 'Forcing original revision ids when necessary'
+            log('Forcing original revision ids when necessary')
 
         if self.no_op():
             return
@@ -3752,19 +3752,19 @@ class StampVersion(Command):
                                                     just_use_head=False)
 
         if problems:
-            print problems
+            log(problems)
             raise GiveUp('Problems prevent writing version stamp file')
 
         version_dir = os.path.join(builder.db.root_path, 'versions')
         if not os.path.exists(version_dir):
-            print 'Creating directory %s'%version_dir
+            log('Creating directory %s'%version_dir)
             os.mkdir(version_dir)
 
         working_filename = os.path.join(version_dir, '_temporary.stamp')
-        print 'Writing to',working_filename
+        log('Writing to',working_filename)
         hash = stamp.write_to_file(working_filename, version=version)
-        print 'Wrote revision data to %s'%working_filename
-        print 'File has SHA1 hash %s'%hash
+        log('Wrote revision data to %s'%working_filename)
+        log('File has SHA1 hash %s'%hash)
 
         if builder.follow_build_desc_branch:
             # Note that we don't ask for builder.build_desc_repo.branch, as
@@ -3780,7 +3780,7 @@ class StampVersion(Command):
             version_filename = "%s.stamp"%(builder.build_name)
 
         final_name = os.path.join(version_dir, version_filename)
-        print 'Renaming %s to %s'%(working_filename, final_name)
+        log('Renaming %s to %s'%(working_filename, final_name))
         os.rename(working_filename, final_name)
 
         db = builder.db
@@ -3789,7 +3789,7 @@ class StampVersion(Command):
             with Directory(version_dir):
                 vcs_name, just_url = version_control.split_vcs_url(versions_url)
                 if vcs_name:
-                    print 'Adding version stamp file to VCS'
+                    log('Adding version stamp file to VCS')
                     version_control.vcs_init_directory(vcs_name, [version_filename])
 
 @subcommand('stamp', 'release', CAT_EXPORT)
@@ -3909,29 +3909,29 @@ class StampRelease(Command):
         stamp, problems = ReleaseStamp.from_builder(builder)
 
         if problems:
-            print problems
+            log(problems)
             raise GiveUp('Problems prevent writing release stamp file')
 
         version_dir = os.path.join(builder.db.root_path, 'versions')
         if not os.path.exists(version_dir):
-            print 'Creating directory %s'%version_dir
+            log('Creating directory %s'%version_dir)
             os.mkdir(version_dir)
 
         if guess_version:
             vnum = self.guess_next_version_number(version_dir, name)
             version = 'v%s'%vnum
-            print "Pretending you said 'muddle stamp",
+            log("Pretending you said 'muddle stamp", end=' ')
             if archive:
-                print "-archive %s"%archive,
+                log("-archive %s"%archive, end=' ')
             if compression:
-                print "-compression %s"%compression,
-            print "release %s %s'"%(name, version)
+                log("-compression %s"%compression, end=' ')
+            log("release %s %s'"%(name, version))
 
         working_filename = os.path.join(version_dir, '_temporary.stamp')
-        print 'Writing to',working_filename
+        log('Writing to',working_filename)
         hash = stamp.write_to_file(working_filename)
-        print 'Wrote revision data to %s'%working_filename
-        print 'File has SHA1 hash %s'%hash
+        log('Wrote revision data to %s'%working_filename)
+        log('File has SHA1 hash %s'%hash)
 
         if is_template:
             version_filename = 'this-is-not-a-file-name.release'
@@ -3939,7 +3939,7 @@ class StampRelease(Command):
             version_filename = "%s_%s.release"%(name, version)
 
         final_name = os.path.join(version_dir, version_filename)
-        print 'Renaming %s to %s'%(working_filename, final_name)
+        log('Renaming %s to %s'%(working_filename, final_name))
         os.rename(working_filename, final_name)
 
         db = builder.db
@@ -3948,14 +3948,14 @@ class StampRelease(Command):
             with Directory(version_dir):
                 vcs_name, just_url = version_control.split_vcs_url(versions_url)
                 if vcs_name:
-                    print 'Adding release stamp file to VCS'
+                    log('Adding release stamp file to VCS')
                     version_control.vcs_init_directory(vcs_name, [version_filename])
 
     def guess_next_version_number(self, version_dir, name):
         """Return our best guess as to the next (minor) version number.
         """
-        print
-        print 'Looking in versions directory for previous releases of "%s"'%name
+        log()
+        log('Looking in versions directory for previous releases of "%s"'%name)
         max_vnum = utils.VersionNumber.unset()
         files = os.listdir(version_dir)
         for filename in sorted(files):
@@ -3963,14 +3963,14 @@ class StampRelease(Command):
             if ext != '.release':
                 continue
             if not base.startswith(name+'_v'):
-                print 'Ignoring release file %s (wrong release name)'%filename
+                log('Ignoring release file %s (wrong release name)'%filename)
                 continue
-            print 'Found release file %s'%filename
+            log('Found release file %s'%filename)
             version = base[len(name)+2:]
             try:
                 vnum = utils.VersionNumber.from_string(version)
             except GiveUp as e:
-                print 'Ignoring release file %s (cannot parse version number: %s'%(filename, e)
+                log('Ignoring release file %s (cannot parse version number: %s'%(filename, e))
                 continue
             if vnum > max_vnum:
                 max_vnum = vnum
@@ -4021,7 +4021,7 @@ class StampDiff(Command):
         return False
 
     def print_syntax(self):
-        print ':Syntax: muddle stamp diff [<style>] <path1> <path2> [<output_file>]'
+        log(':Syntax: muddle stamp diff [<style>] <path1> <path2> [<output_file>]')
 
     def without_build_tree(self, muddle_binary, current_dir, args):
         if not args:
@@ -4057,7 +4057,7 @@ class StampDiff(Command):
                 diff_style = 'direct'
                 requires_text_filess = False
             elif word.startswith('-'):
-                print "Unexpected switch '%s'"%word
+                log("Unexpected switch '%s'"%word)
                 self.print_syntax()
                 return 2
             else:
@@ -4068,7 +4068,7 @@ class StampDiff(Command):
                 elif output_file is None:
                     output_file = word
                 else:
-                    print "Unexpected '%s'"%word
+                    log("Unexpected '%s'"%word)
                     self.print_syntax()
                     return 2
 
@@ -4100,7 +4100,7 @@ class StampDiff(Command):
             else:
                 parts.append('stamp file')
             parts.append('"%s"'%path2)
-            print ' '.join(parts)
+            log(' '.join(parts))
             return
 
         path1 = utils.normalise_path(path1)
@@ -4118,7 +4118,7 @@ class StampDiff(Command):
                 file2 = path2
 
             if output_file:
-                print 'Writing output to %s'%output_file
+                log('Writing output to %s'%output_file)
                 with open(output_file, 'w') as fd:
                     self.diff(path1, path2, file1, file2, diff_style, fd)
             else:
@@ -4136,7 +4136,7 @@ class StampDiff(Command):
                 stamp2 = VersionStamp.from_file(path2)
 
             if output_file:
-                print 'Writing output to %s'%output_file
+                log('Writing output to %s'%output_file)
                 with open(output_file, 'w') as fd:
                     self.diff_direct(path1_is_build, path2_is_build,
                                      path1, path2, stamp1, stamp2, fd)
@@ -4154,7 +4154,7 @@ class StampDiff(Command):
         """
         (build_root, build_domain) = utils.find_root_and_domain(path)
         b = mechanics.load_builder(build_root, muddle_binary, default_domain=build_domain)
-        print 'Calculating stamp for %s'%path
+        log('Calculating stamp for %s'%path)
         stamp, problems = VersionStamp.from_builder(b, quiet=True)
         return stamp
 
@@ -4170,7 +4170,7 @@ class StampDiff(Command):
         stamp = self._calculate_stamp(path, muddle_binary)
         with tempfile.NamedTemporaryFile(suffix='.stamp', mode='w', delete=False) as fd:
             filename = fd.name
-            print 'Writing stamp for %s to %s'%(path, filename)
+            log('Writing stamp for %s to %s'%(path, filename))
             stamp.write_to_file_object(fd)
         return filename
 
@@ -4318,14 +4318,14 @@ class StampPush(Command):
                                 'Have you done "muddle stamp version"?')
 
         if self.no_op():
-            print 'Push versions directory to', versions_url
+            log('Push versions directory to', versions_url)
             return
 
         with Directory(versions_dir):
             version_control.vcs_push_directory(versions_url)
 
         if args:
-            print 'Remembering versions repository %s'%versions_url
+            log('Remembering versions repository %s'%versions_url)
             db.VersionsRepository_pathfile.set(versions_url)
             db.VersionsRepository_pathfile.commit()
 
@@ -4381,22 +4381,22 @@ class StampPull(Command):
 
         if self.no_op():
             if os.path.exists(versions_dir):
-                print 'Pull versions directory from', versions_url
+                log('Pull versions directory from', versions_url)
             else:
-                print 'Clone versions directory from', versions_url
+                log('Clone versions directory from', versions_url)
             return
 
         if os.path.exists(versions_dir):
             with Directory(versions_dir):
                 version_control.vcs_pull_directory(versions_url)
         else:
-            print "'versions/' directory does not exist - cloning instead"
+            log("'versions/' directory does not exist - cloning instead")
             with Directory(db.root_path):
                 # Make sure we always clone to a directory of the right name...
                 version_control.vcs_get_directory(versions_url, "versions")
 
         if args:
-            print 'Remembering versions repository %s'%versions_url
+            log('Remembering versions repository %s'%versions_url)
             db.VersionsRepository_pathfile.set(versions_url)
             db.VersionsRepository_pathfile.commit()
 
@@ -4514,7 +4514,7 @@ class UnStamp(Command):
     """
 
     def print_syntax(self):
-        print """
+        log("""
     To create a build tree:
 
     :Syntax: muddle unstamp <file>
@@ -4526,7 +4526,7 @@ class UnStamp(Command):
 
     :Syntax: muddle unstamp -u[pdate] <file>
 
-    Try "muddle help unstamp" for more information."""
+    Try "muddle help unstamp" for more information.""")
 
     allowed_switches = {
             '-u' : 'update',
@@ -4585,7 +4585,7 @@ class UnStamp(Command):
         vcs_name, just_url = version_control.split_vcs_url(thing)
 
         if vcs_name:
-            print 'Retrieving %s'%thing
+            log('Retrieving %s'%thing)
             data = version_control.vcs_get_file_data(thing)
             # We could do various things here, but it actually seems like
             # quite a good idea to store the data *as a file*, so the user
@@ -4593,7 +4593,7 @@ class UnStamp(Command):
             # sorts)
             parts = urlparse(thing)
             path, filename = os.path.split(parts.path)
-            print 'Saving data as %s'%filename
+            log('Saving data as %s'%filename)
             with open(filename,'w') as fd:
                 fd.write(data)
         elif os.path.exists(thing):
@@ -4602,7 +4602,7 @@ class UnStamp(Command):
             # Hmm - maybe a plain old URL
             parts = urlparse(thing)
             path, filename = os.path.split(parts.path)
-            print 'Retrieving %s'%filename
+            log('Retrieving %s'%filename)
             data = urllib.urlretrieve(thing, filename)
 
         if self.no_op():
@@ -4629,7 +4629,7 @@ class UnStamp(Command):
                     " .stamp"%version_file)
 
         actual_url = '%s/%s'%(repo, version_dir)
-        print 'Retrieving %s'%actual_url
+        log('Retrieving %s'%actual_url)
 
         if self.no_op():
             return
@@ -4689,7 +4689,7 @@ class UnStamp(Command):
         for domain_name in domain_names:
             domain_repo, domain_desc = domains[domain_name]
 
-            print "Adding domain %s"%domain_name
+            log("Adding domain %s"%domain_name)
 
             # Take care to allow for multiple parts
             # Thus domain 'fred(jim)' maps to <root>/domains/fred/domains/jim
@@ -4710,14 +4710,14 @@ class UnStamp(Command):
             co_dir, co_leaf, repo = checkouts[label]
             if label.domain:
                 domain_root_path = self._domain_path(current_dir, label.domain)
-                print "Unstamping checkout (%s)%s"%(label.domain,label.name)
+                log("Unstamping checkout (%s)%s"%(label.domain,label.name))
                 if co_dir:
                     actual_co_dir = os.path.join(domain_root_path, 'src', co_dir)
                 else:
                     actual_co_dir = os.path.join(domain_root_path, 'src')
                 checkout_from_repo(builder, label, repo, actual_co_dir, co_leaf)
             else:
-                print "Unstamping checkout %s"%label.name
+                log("Unstamping checkout %s"%label.name)
                 checkout_from_repo(builder, label, repo, co_dir, co_leaf)
 
         target_labels = {label.copy_with_tag(LabelTag.CheckedOut) for label in co_labels}
@@ -4738,7 +4738,7 @@ class UnStamp(Command):
             domain_root_path = self._domain_path(root_path, domain_name)
 
             if not os.path.exists(domain_root_path):
-                print "Adding domain %s"%domain_name
+                log("Adding domain %s"%domain_name)
                 os.makedirs(domain_root_path)
                 domain_builder = mechanics.minimal_build_tree(builder.muddle_binary,
                                                               domain_root_path,
@@ -4758,13 +4758,13 @@ class UnStamp(Command):
             co_dir, co_leaf, repo = checkouts[label]
             if label.domain:
                 domain_root_path = self._domain_path(root_path, label.domain)
-                print "Inspecting checkout (%s)%s"%(label.domain,label.name)
+                log("Inspecting checkout (%s)%s"%(label.domain,label.name))
                 if co_dir:
                     actual_co_dir = os.path.join(domain_root_path, 'src', co_dir)
                 else:
                     actual_co_dir = os.path.join(domain_root_path, 'src')
             else:
-                print "Inspecting checkout %s"%label.name
+                log("Inspecting checkout %s"%label.name)
                 if co_dir:
                     actual_co_dir = os.path.join(root_path, 'src', co_dir)
                 else:
@@ -4773,7 +4773,7 @@ class UnStamp(Command):
             if not os.path.exists(os.path.join(actual_co_dir, co_leaf)):
                 # First check - do we have a directory for the checkout?
                 # No, we've never heard of it. So add it in...
-                print 'No directory for %s: %s'%(label, os.path.join(actual_co_dir, co_leaf))
+                log('No directory for %s: %s'%(label, os.path.join(actual_co_dir, co_leaf)))
                 checkout_from_repo(builder, label, repo, actual_co_dir, co_leaf)
                 changed_checkouts.append(str(label))
             else:
@@ -4785,13 +4785,13 @@ class UnStamp(Command):
                 # XXX compare that directly. For the moment, we have to do
                 # XXX it in stages...
                 #
-                print 'Found directory for %s - checking repositories'%label
+                log('Found directory for %s - checking repositories'%label)
                 builder_repo = get_checkout_repo(label)
                 if not builder_repo.same_ignoring_revision(repo):
                     # It's not the identical repository.
-                    print '..repositories do not match'
-                    print '  build: %r'%builder_repo
-                    print '  stamp: %r'%repo
+                    log('..repositories do not match')
+                    log('  build: %r'%builder_repo)
+                    log('  stamp: %r'%repo)
                     # Overwrite its information
                     checkout_from_repo(builder, label, repo, actual_co_dir, co_leaf)
                     changed_checkouts.append(str(label))
@@ -4804,9 +4804,9 @@ class UnStamp(Command):
                     old_revision = vcs_handler.revision_to_checkout(builder, l, show_pushd=False)
                     new_revision = repo.revision
                     if old_revision != new_revision:
-                        print '.. revisions do not match'
-                        print '   build: %s'%old_revision
-                        print '   stamp: %s'%new_revision
+                        log('.. revisions do not match')
+                        log('   build: %s'%old_revision)
+                        log('   stamp: %s'%new_revision)
                         # Overwrite its information
                         checkout_from_repo(builder, label, repo, actual_co_dir, co_leaf)
                         changed_checkouts.append(str(label))
@@ -4817,7 +4817,7 @@ class UnStamp(Command):
         # but currently we don't provide such...
         had_problems = False
         if changed_checkouts:
-            print 'Updating the changed checkouts'
+            log('Updating the changed checkouts')
             try:
                 p = Pull()
                 # Demand that it just pulls the labels we give it, without
@@ -4839,9 +4839,9 @@ class UnStamp(Command):
         Check that the build tree we now have on disk looks a bit like what we want...
         """
         # So reload as a "new" builder
-        print
-        print 'Checking that the build is restored correctly...'
-        print
+        log()
+        log('Checking that the build is restored correctly...')
+        log()
         (build_root, build_domain) = utils.find_root_and_domain(current_dir)
 
         b = mechanics.load_builder(build_root, muddle_binary, default_domain=build_domain)
@@ -4858,21 +4858,21 @@ class UnStamp(Command):
         s_difference = s_checkouts.difference(b_checkouts)
         b_difference = b_checkouts.difference(s_checkouts)
         if s_difference or b_difference:
-            print 'There is a mismatch between the checkouts in the stamp' \
-                  ' file and those in the build'
+            log('There is a mismatch between the checkouts in the stamp' \
+                  ' file and those in the build')
             if s_difference:
-                print 'Checkouts only in the stamp file:'
+                log('Checkouts only in the stamp file:')
                 for label in s_difference:
-                    print '    %s'%label
+                    log('    %s'%label)
             if b_difference:
-                print 'Checkouts only in the build:'
+                log('Checkouts only in the build:')
                 for label in b_difference:
-                    print '    %s'%label
+                    log('    %s'%label)
             return 4
         else:
-            print
-            print '...the checkouts present match those in the stamp file.'
-            print 'The build looks as if it restored correctly.'
+            log()
+            log('...the checkouts present match those in the stamp file.')
+            log('The build looks as if it restored correctly.')
 
 # -----------------------------------------------------------------------------
 # Distribute
@@ -5274,7 +5274,7 @@ class Release(Command):
                          "Use 'muddle release -test' if you're trying to test a release.")
 
         if len(args) != 1:
-            print 'Syntax: muddle release [-test] <release-file>'
+            log('Syntax: muddle release [-test] <release-file>')
             return 2
 
         self.do_release(builder.muddle_binary, current_dir, args[0], True)
@@ -5287,7 +5287,7 @@ class Release(Command):
             raise GiveUp("'muddle release -test' can only be done in a build tree")
 
         if len(args) != 1:
-            print 'Syntax: muddle release [-test] <release-file>'
+            log('Syntax: muddle release [-test] <release-file>')
             return 2
 
         self.do_release(muddle_binary, current_dir, args[0], False)
@@ -5334,7 +5334,7 @@ class Release(Command):
         if os.path.isdir(release_path):
             raise GiveUp('Release directory %s already exists'%release_dir)
 
-        print 'Creating %s'%release_path
+        log('Creating %s'%release_path)
         os.mkdir(release_path)
         # And we always want the release stamp file in the release tarball
         release_filename = os.path.split(release_file)[-1]
@@ -5342,24 +5342,24 @@ class Release(Command):
 
         # Call the 'release_from()' function in our (top level) build
         # description, passing it the path to the release tarball directory
-        print 'Running the "release_from" function...'
+        log('Running the "release_from" function...')
         mechanics.run_release_from(builder, release_path)
 
         # Finally, tar up the tarball directory, and then compress it
-        print 'Making the tarball'
+        log('Making the tarball')
         tf_name, mode = self.calc_tf_name(release, release_dir)
         tf = tarfile.open(tf_name, mode)
         tf.add(release_dir, recursive=True)
         tf.close()
 
         if testing:
-            print
-            print '********************************************************'
-            print '* This build tree is now marked as a release tree.      *'
-            print '* This means various muddle operations are not allowed. *'
-            print '* To make it a normal build tree again, do:             *'
-            print '*   rm .muddle/Release                                  *'
-            print '********************************************************'
+            log()
+            log('********************************************************')
+            log('* This build tree is now marked as a release tree.      *')
+            log('* This means various muddle operations are not allowed. *')
+            log('* To make it a normal build tree again, do:             *')
+            log('*   rm .muddle/Release                                  *')
+            log('********************************************************')
 
     def calc_tf_name(self, release, release_dir):
         """Work out the name and mode of the archive file we want to generate.
@@ -5820,14 +5820,14 @@ class Push(CheckoutCommand):
                 if stop_on_problem:
                     raise
                 else:
-                    print e
+                    log(e)
                     problems.append(e)
 
         if problems:
-            print '\nThe following problems occurred:\n'
+            log('\nThe following problems occurred:\n')
             for e in problems:
-                print str(e).rstrip()
-                print
+                log(str(e).rstrip())
+                log()
             raise GiveUp()
 
 @command('pull', CAT_CHECKOUT, ['fetch', 'update'])   # we want to settle on one command
@@ -5938,20 +5938,20 @@ class Pull(CheckoutCommand):
 
         just_pulled = builder.db.just_pulled.get_from_disk()
         if just_pulled:
-            print '\nThe following checkouts were pulled:\n ',
-            print label_list_to_string(sorted(just_pulled), join_with='\n  ')
+            log('\nThe following checkouts were pulled:\n ', end=' ')
+            log(label_list_to_string(sorted(just_pulled), join_with='\n  '))
 
         if self.not_needed:
-            print '\nThe following pulls were not needed:'
+            log('\nThe following pulls were not needed:')
             for e in self.not_needed:
-                print
-                print str(e).rstrip()
+                log()
+                log(str(e).rstrip())
 
         if self.problems:
-            print '\nThe following problems occurred:'
+            log('\nThe following problems occurred:')
             for e in self.problems:
-                print
-                print str(e).rstrip()
+                log()
+                log(str(e).rstrip())
             raise GiveUp()
 
     def handle_build_descriptions_first(self, builder, labels):
@@ -5986,8 +5986,8 @@ class Pull(CheckoutCommand):
             # Find the first of those (remember, they're in sorted domain order)
             for co in build_desc_labels:
                 if co in remaining_build_descs:
-                    print
-                    print 'Pulling build description %s'%co
+                    log()
+                    log('Pulling build description %s'%co)
                     self.pull(builder, co)
                     # That will have added 'co' to the just_pulled set
                     # *if* it actually changed it.
@@ -6004,7 +6004,7 @@ class Pull(CheckoutCommand):
                         self.delete_pyc_files(builder, co)
                         # And reload the *top-level* build description, so that
                         # we guarantee to get the proper version of the world
-                        print 'Reloading build description'
+                        log('Reloading build description')
                         builder = mechanics.load_builder(build_root, None)
                         # Don't forget what we already pulled - we need to
                         # tell this (new) builder about it
@@ -6029,8 +6029,8 @@ class Pull(CheckoutCommand):
         labels = target_set.difference(done)
 
         if labels:
-            print
-            print 'Now pulling the rest of the checkouts'
+            log()
+            log('Now pulling the rest of the checkouts')
         return builder, labels
 
     def label_names(self, labels):
@@ -6075,13 +6075,13 @@ class Pull(CheckoutCommand):
             # And then build it again
             builder.build_label(co_label, master=False)
         except Unsupported as e:
-            print e
+            log(e)
             self.not_needed.append(e)
         except GiveUp as e:
             if self.stop_on_problem:
                 raise
             else:
-                print e
+                log(e)
                 self.problems.append(e)
 
     def delete_pyc_files(self, builder, co_label):
@@ -6093,9 +6093,9 @@ class Pull(CheckoutCommand):
                 name, ext = os.path.splitext(file)
                 # Delete any .pyc file that has a corresponding .py file
                 if ext == '.pyc' and name+'.py' in files:
-                    print 'Found   ', os.path.join(root, name+'.py')
+                    log('Found   ', os.path.join(root, name+'.py'))
                     path = os.path.join(root, file)
-                    print 'Deleting', path
+                    log('Deleting', path)
                     os.remove(path)
 
 @command('merge', CAT_CHECKOUT)
@@ -6157,7 +6157,7 @@ class Merge(CheckoutCommand):
                     if stop_on_problem:
                         raise
                     else:
-                        print e
+                        log(e)
                         problems.append(e)
         finally:
             # Remember to commit the 'just pulled' information
@@ -6165,14 +6165,14 @@ class Merge(CheckoutCommand):
 
         just_pulled = builder.db.just_pulled.get_from_disk()
         if just_pulled:
-            print '\nThe following checkouts were pulled/merged:\n ',
-            print label_list_to_string(just_pulled, join_with='\n  ')
+            log('\nThe following checkouts were pulled/merged:\n ', end=' ')
+            log(label_list_to_string(just_pulled, join_with='\n  '))
 
         if problems:
-            print '\nThe following problems occurred:'
+            log('\nThe following problems occurred:')
             for e in problems:
-                print
-                print str(e).rstrip()
+                log()
+                log(str(e).rstrip())
             raise GiveUp()
 
 @command('status', CAT_CHECKOUT)
@@ -6235,7 +6235,7 @@ class Status(CheckoutCommand):
         if len(labels) == 0:
             raise GiveUp('No checkouts specified - not checking anything')
         else:
-            print 'Checking %d checkout%s'%(len(labels), '' if len(labels)==1 else 's')
+            log('Checking %d checkout%s'%(len(labels), '' if len(labels)==1 else 's'))
 
         verbose = ('verbose' in self.switches)
         joined = ('join' in self.switches)
@@ -6244,15 +6244,15 @@ class Status(CheckoutCommand):
         something = []
         for co in labels:
             if not builder.db.is_tag_done(co):
-                print
-                print '%s is not checked out'%co
+                log()
+                log('%s is not checked out'%co)
                 something.append(co)
                 continue
 
             try:
                 vcs_handler = builder.db.get_checkout_vcs(co)
             except GiveUp:
-                print "Rule for label '%s' has no VCS - cannot find its status"%co
+                log("Rule for label '%s' has no VCS - cannot find its status"%co)
                 something.append(co)
                 continue
 
@@ -6261,13 +6261,13 @@ class Status(CheckoutCommand):
             except MuddleBug as err:
                 raise MuddleBug('Giving up in %s because:\n%s'%(co,err))
             except GiveUp as err:
-                print err
+                log(err)
                 something.append(co)
                 continue
 
             if text:
-                print
-                print text.strip()
+                log()
+                log(text.strip())
                 something.append(co)
 
         if something:
@@ -6278,7 +6278,7 @@ class Status(CheckoutCommand):
                 raise GiveUp('The following checkouts need attention:\n  '
                              '%s'%(label_list_to_string(something, join_with='\n  ')))
         else:
-            print 'All checkouts seemed clean'
+            log('All checkouts seemed clean')
 
 @command('reparent', CAT_CHECKOUT)
 class Reparent(CheckoutCommand):
@@ -6332,7 +6332,7 @@ class Reparent(CheckoutCommand):
             try:
                 vcs_handler = builder.db.get_checkout_vcs(co)
             except GiveUp:
-                print "Rule for label '%s' has no VCS - cannot reparent, ignored"%co
+                log("Rule for label '%s' has no VCS - cannot reparent, ignored"%co)
                 continue
             vcs_handler.reparent(builder, co, force=force, verbose=True)
 
@@ -6596,9 +6596,9 @@ class UpstreamCommand(CheckoutCommand):
 
         no_op = self.no_op()
         if no_op:
-            print 'Asked to %s:\n  %s'%(self.cmd_name,
-                    label_list_to_string(labels, join_with='\n  '))
-            print 'for: %s'%(', '.join(upstream_names))
+            log('Asked to %s:\n  %s'%(self.cmd_name,
+                    label_list_to_string(labels, join_with='\n  ')))
+            log('for: %s'%(', '.join(upstream_names)))
             # And fall through for our method to tell us more
 
         self.build_these_labels(builder, labels, upstream_names, no_op)
@@ -6621,13 +6621,13 @@ class UpstreamCommand(CheckoutCommand):
                 # And then we can do the actual work
                 for repo, names in upstreams:
                     if no_op:
-                        print 'Would %s %s %s %s (%s)'%(self.verb,
-                                co, self.direction, repo, ', '.join(names))
+                        log('Would %s %s %s %s (%s)'%(self.verb,
+                                co, self.direction, repo, ', '.join(names)))
                         continue
                     else:
-                        print
-                        print '%s %s %s %s (%s)'%(self.verbing,
-                                co, self.direction, repo, ', '.join(names))
+                        log()
+                        log('%s %s %s %s (%s)'%(self.verbing,
+                                co, self.direction, repo, ', '.join(names)))
                         # Arbitrarily use the first of those names as the
                         # name that the VCS (might) remember for this upstream.
                         # Note that get_upstream_repos() tells us the names
@@ -6636,8 +6636,8 @@ class UpstreamCommand(CheckoutCommand):
 
             else:
                 if not no_op:
-                    print
-                print 'Nowhere to %s %s %s'%(self.verb, co, self.direction)
+                    log()
+                log('Nowhere to %s %s %s'%(self.verb, co, self.direction))
 
     def handle_label(self, builder, co_label, upstream_name, repo):
         vcs_handler = version_control.vcs_handler_for(builder, co_label)
@@ -6870,11 +6870,11 @@ class Retry(AnyLabelCommand):
     """
 
     def build_these_labels(self, builder, labels):
-        print "Clear: %s"%(label_list_to_string(labels))
+        log("Clear: %s"%(label_list_to_string(labels)))
         for l in labels:
             builder.db.clear_tag(l)
 
-        print "Build: %s"%(label_list_to_string(labels))
+        log("Build: %s"%(label_list_to_string(labels)))
         builder.build_labels(labels, master=True)
 
 # -----------------------------------------------------------------------------
@@ -7013,9 +7013,9 @@ class BranchTree(Command):
 
         if self.no_op():
             if check:
-                print 'Asked to check if branch "%s" already exists in all checkout'%branch
+                log('Asked to check if branch "%s" already exists in all checkout'%branch)
             else:
-                print 'Asked to create branch "%s" in all checkouts'%branch
+                log('Asked to create branch "%s" in all checkouts'%branch)
             return
 
         all_checkouts = builder.all_checkout_labels(LabelTag.CheckedOut)
@@ -7027,20 +7027,20 @@ class BranchTree(Command):
                              '\n  '.join(sorted(problems))))
 
             if check:
-                print 'No problems expected for "branch-tree %s"'%branch
+                log('No problems expected for "branch-tree %s"'%branch)
 
         if not check:
             branched = self.branch_checkouts(builder, all_checkouts, branch, verbose)
             if branched:
-                print
-                print "If you want the tree branching to be persistent, remember to edit"
-                print "the branched build description,"
-                print "  %s"%builder.db.build_desc_file_name()
-                print "and add:"
-                print
-                print "  builder.follow_build_desc_branch = True"
-                print
-                print "to the describe_to() function, and check it in/push it."
+                log()
+                log("If you want the tree branching to be persistent, remember to edit")
+                log("the branched build description,")
+                log("  %s"%builder.db.build_desc_file_name())
+                log("and add:")
+                log()
+                log("  builder.follow_build_desc_branch = True")
+                log()
+                log("to the describe_to() function, and check it in/push it.")
 
     def check_checkouts(self, builder, checkouts, branch, verbose):
         """
@@ -7101,14 +7101,14 @@ class BranchTree(Command):
             repo = co_data.repo
 
             if not vcs_handler.vcs.supports_branching():
-                print '%s uses %s, which does not support' \
-                      ' lightweight branching'%(co, vcs_handler.vcs.short_name)
+                log('%s uses %s, which does not support' \
+                      ' lightweight branching'%(co, vcs_handler.vcs.short_name))
                 problems.append((co, "VCS %s not supported"))
                 continue
 
             if repo.revision is not None:
-                print '%s explicitly specifies revision "%s" in' \
-                      ' the build description'%(co, repo.revision)
+                log('%s explicitly specifies revision "%s" in' \
+                      ' the build description'%(co, repo.revision))
                 problems.append((co, "specific revision %s"%repo.revision))
                 continue
 
@@ -7120,15 +7120,15 @@ class BranchTree(Command):
                     # to what was requested.
                     pass
                 else:
-                    print '%s explicitly specifies branch "%s" in' \
-                          ' the build description'%(co, repo.branch)
+                    log('%s explicitly specifies branch "%s" in' \
+                          ' the build description'%(co, repo.branch))
                     problems.append((co, "specific branch %s"%repo.branch))
                     continue
 
             # Shallow checkouts are not terribly well integrated - we do this
             # very much by hand...
             if 'shallow_checkout' in co_data.options:
-                print '%s is shallow, so cannot be branched'%co
+                log('%s is shallow, so cannot be branched'%co)
                 problems.append((co, "shallow checkout"))
                 continue
 
@@ -7143,14 +7143,14 @@ class BranchTree(Command):
                                     verbose=verbose)
             selected += 1
 
-        print 'Successfully created  branch %s in %d out of %d checkout%s'%(branch,
-                created, len(all_checkouts), '' if len(all_checkouts)==1 else 's')
-        print 'Successfully selected branch %s in %d out of %d checkout%s'%(branch,
-                selected, len(all_checkouts), '' if len(all_checkouts)==1 else 's')
+        log('Successfully created  branch %s in %d out of %d checkout%s'%(branch,
+                created, len(all_checkouts), '' if len(all_checkouts)==1 else 's'))
+        log('Successfully selected branch %s in %d out of %d checkout%s'%(branch,
+                selected, len(all_checkouts), '' if len(all_checkouts)==1 else 's'))
         if already_exists_in:
-            print
-            print 'Branch %s already existed in:\n  %s'%(branch,
-                         label_list_to_string(already_exists_in, join_with='\n  '))
+            log()
+            log('Branch %s already existed in:\n  %s'%(branch,
+                         label_list_to_string(already_exists_in, join_with='\n  ')))
         if problems:
             # Make our reporting of problems relatively terse, as we should
             # only need to report them if the user specified -force, and thus
@@ -7160,9 +7160,9 @@ class BranchTree(Command):
                 length = len(str(co))
                 if length > maxlen:
                     maxlen = length
-            print 'Unable to branch the following:'
+            log('Unable to branch the following:')
             for co, text in problems:
-                print '  %.*s (%s)'%(maxlen, co, text)
+                log('  %.*s (%s)'%(maxlen, co, text))
 
         return selected
 
@@ -7206,16 +7206,16 @@ class VeryClean(Command):
 
     def with_build_tree(self, builder, current_dir, args):
         if args:
-            print "Syntax: veryclean"
-            print self.__doc__
+            log("Syntax: veryclean")
+            log(self.__doc__)
             return
 
         if self.no_op():
             def delete_directory(name):
                 if os.path.exists(name):
-                    print 'Would delete %s'%name
+                    log('Would delete %s'%name)
                 else:
-                    print 'No need to delete %s as it does not exist'%name
+                    log('No need to delete %s as it does not exist'%name)
         else:
             def onerror(fn, path, excinfo):
                 type, value = excinfo[:2]
@@ -7224,12 +7224,12 @@ class VeryClean(Command):
 
             def delete_directory(name):
                 if os.path.exists(name):
-                    print 'Deleting %s'%name
+                    log('Deleting %s'%name)
                     try:
                         shutil.rmtree(name, onerror=onerror)
                     except GiveUp as e:
-                        print e
-                        print '...giving up on %s'%name
+                        log(e)
+                        log('...giving up on %s'%name)
 
         def tidy_domain(path):
             with Directory(path):
@@ -7279,8 +7279,8 @@ class Instruct(Command):
 
     def with_build_tree(self, builder, current_dir, args):
         if (len(args) != 2 and len(args) != 1):
-            print "Syntax: instruct [pkg{role}] <[instruction-file]>"
-            print self.__doc__
+            log("Syntax: instruct [pkg{role}] <[instruction-file]>")
+            log(self.__doc__)
             return
 
         arg = args[0]
@@ -7310,9 +7310,9 @@ class Instruct(Command):
 
         if self.no_op():
             if filename:
-                print "Register instructions for %s from %s"%(str(label), filename)
+                log("Register instructions for %s from %s"%(str(label), filename))
             else:
-                print "Unregister instructions for %s"%label
+                log("Unregister instructions for %s"%label)
             return
 
         # Last, but not least, do the instruction ..
@@ -7368,8 +7368,8 @@ class RunIn(Command):
 
     def with_build_tree(self, builder, current_dir, args):
         if (len(args) < 2):
-            print "Syntax: runin <label> <command> [ ... ]"
-            print self.__doc__
+            log("Syntax: runin <label> <command> [ ... ]")
+            log(self.__doc__)
             return
 
         what = args[0]
@@ -7381,7 +7381,7 @@ class RunIn(Command):
         dirs_done = set()
 
         if self.no_op():
-            print 'Run "%s" for: %s'%(command, label_list_to_string(labels))
+            log('Run "%s" for: %s'%(command, label_list_to_string(labels)))
             return
 
         for l in labels:
@@ -7423,7 +7423,7 @@ class RunIn(Command):
                         subprocess.call(command, shell=True, env=env,
                                         stdout=sys.stdout, stderr=subprocess.STDOUT)
                 else:
-                    print "! %s does not exist."%dir
+                    log("! %s does not exist."%dir)
 
 @command('env', CAT_MISC)       # We're not *really* a normal package command
 class Env(PackageCommand):
@@ -7472,7 +7472,7 @@ class Env(PackageCommand):
         self.name = args[2]
         args = args[3:]
 
-        print 'args:', args
+        log('args:', args)
 
         if self.mode == "build":
             self.required_tag = LabelTag.Built
@@ -7485,7 +7485,7 @@ class Env(PackageCommand):
 
     def build_these_labels(self, builder, args):
 
-        print "Environment for labels %s"%(label_list_to_string(args))
+        log("Environment for labels %s"%(label_list_to_string(args)))
 
         env = env_store.Store()
 
@@ -7507,7 +7507,7 @@ class Env(PackageCommand):
         else:
             raise GiveUp("Language must be sh, py, python or c, not %s"%self.lang)
 
-        print script
+        log(script)
 
 @command('copywithout', CAT_MISC)
 class CopyWithout(Command):
@@ -7553,9 +7553,9 @@ class CopyWithout(Command):
         without = args[2:]
 
         if self.no_op():
-            print "Copy from: %s"%(src_dir)
-            print "Copy to  : %s"%(dst_dir)
-            print "Excluding: %s"%(" ".join(without))
+            log("Copy from: %s"%(src_dir))
+            log("Copy to  : %s"%(dst_dir))
+            log("Excluding: %s"%(" ".join(without)))
             return
 
         utils.copy_without(src_dir, dst_dir, without, object_exactly=True,
@@ -7721,10 +7721,10 @@ class Subst(Command):
 
 
         if self.no_op():
-            print 'Substitute source file %s'%src
+            log('Substitute source file %s'%src)
             if xml_file:
-                print '       using data from %s'%xml_file
-            print '            to produce %s'%dst
+                log('       using data from %s'%xml_file)
+            log('            to produce %s'%dst)
             return
 
         if xml_file:

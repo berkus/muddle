@@ -8,6 +8,11 @@ import muddled.utils as utils
 
 from muddled.depend import Action
 
+import logging
+def log(*args, **kwargs):
+    args = [str(arg) for arg in args]
+    logging.getLogger(__name__).warning(' '.join(args))
+
 class CleanDeploymentBuilder(Action):
     def __init__(self):
         pass
@@ -17,7 +22,7 @@ class CleanDeploymentBuilder(Action):
             (label.tag == utils.LabelTag.Clean or
             label.tag == utils.LabelTag.DistClean)):
             deploy_path = builder.deploy_path(label)
-            print "> Remove %s"%deploy_path
+            log("> Remove %s"%deploy_path)
             utils.recursively_remove(deploy_path)
             builder.kill_label(label.copy_with_tag(utils.LabelTag.Deployed))
         else:

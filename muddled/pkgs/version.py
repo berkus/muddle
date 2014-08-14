@@ -9,6 +9,11 @@ import muddled.utils as utils
 import muddled.depend as depend
 import os
 
+import logging
+def log(*args, **kwargs):
+    args = [str(arg) for arg in args]
+    logging.getLogger(__name__).warning(' '.join(args))
+
 class VersionBuilder(PackageBuilder):
     """
     Write a version number file
@@ -61,7 +66,7 @@ class VersionBuilder(PackageBuilder):
         """
 
         utils.ensure_dir(self.dir_name(builder))
-        print "dir %s ensured."%(self.dir_name(builder))
+        log("dir %s ensured."%(self.dir_name(builder)))
         f = open(self.file_name(builder), 'w')
         f.write("<?xml version=\"1.0\" ?>\n")
         f.write("\n")

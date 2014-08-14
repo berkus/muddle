@@ -26,6 +26,11 @@ from muddled.deployments.collect import copy_from_checkout, \
                                         copy_from_role_install, \
                                         copy_from_deployment
 
+import logging
+def log(*args, **kwargs):
+    args = [str(arg) for arg in args]
+    logging.getLogger(__name__).warning(' '.join(args))
+
 class RomFSApplyChmod(CollectApplyChmod):
 
     # XXX Why is this different than for collect?
@@ -110,7 +115,7 @@ class RomFSDeploymentBuilder(CollectDeploymentBuilder):
         if self.my_tmp is None:
             self.my_tmp = tempfile.mkdtemp();
 
-        print "Deploying to %s .. \n"%self.my_tmp
+        log("Deploying to %s .. \n"%self.my_tmp)
 
         if label.tag == utils.LabelTag.Deployed:
             self.apply_instructions(builder, label, True, self.my_tmp)

@@ -32,6 +32,11 @@ from muddled.withdir import Directory
 import os
 import stat
 
+import logging
+def log(*args, **kwargs):
+    args = [str(arg) for arg in args]
+    logging.getLogger(__name__).warning(' '.join(args))
+
 def rewrite_links(inv, label):
     obj_dir = inv.package_obj_path(label)
 
@@ -185,7 +190,7 @@ class DebDevAction(PackageBuilder):
             # .. and now we rewrite any pkgconfig etc. files left lying
             # about.
             obj_path = builder.package_obj_path(label)
-            print "> Rewrite .pc and .la files in %s"%(obj_path)
+            log("> Rewrite .pc and .la files in %s"%(obj_path))
             rewrite.fix_up_pkgconfig_and_la(builder, obj_path)
 
         elif (tag == utils.LabelTag.Clean or tag == utils.LabelTag.DistClean):

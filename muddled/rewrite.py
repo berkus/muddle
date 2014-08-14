@@ -20,6 +20,11 @@ import re
 
 import muddled.utils as utils
 
+import logging
+def log(*args, **kwargs):
+    args = [str(arg) for arg in args]
+    logging.getLogger(__name__).warning(' '.join(args))
+
 def parse_line(l):
     """
     Parse the given line, returning (key, value) or (None, None) if it
@@ -205,10 +210,10 @@ def fix_up_pkgconfig_and_la(builder, dir,
         elif stat.S_ISREG(st_rec.st_mode):
             if (la_re.match(current) is not None):
                 # It's a .al file
-                print "> Substitute (LA) %s"%current
+                log("> Substitute (LA) %s"%current)
                 subst_la(builder, current, dir, libPath, includePath, execPrefix)
             elif (pc_re.match(current) is not None):
-                print "> Substitute (PC) %s"%current
+                log("> Substitute (PC) %s"%current)
                 subst_pc(builder, current, dir, libPath, includePath, execPrefix)
 
 

@@ -6,6 +6,11 @@ import muddled.utils as utils
 import muddled.depend as depend
 from muddled.depend import Action
 
+import logging
+def log(*args, **kwargs):
+    args = [str(arg) for arg in args]
+    logging.getLogger(__name__).warning(' '.join(args))
+
 class ArchSpecificAction(object):
     """
     Allow an action to be invoked if and only if you're on the
@@ -86,12 +91,12 @@ class VcsCheckoutBuilder(Action):
             if self._checkout_is_checked_out(builder, co_label):
                 self.vcs.commit(builder, co_label)
             else:
-                print "Checkout %s has not been checked out - not commiting"%co_label
+                log("Checkout %s has not been checked out - not commiting"%co_label)
         elif (target_tag == utils.LabelTag.ChangesPushed):
             if self._checkout_is_checked_out(builder, co_label):
                 self.vcs.push(builder, co_label)
             else:
-                print "Checkout %s has not been checked out - not pushing"%co_label.name
+                log("Checkout %s has not been checked out - not pushing"%co_label.name)
         else:
             raise utils.MuddleBug("Attempt to build unknown tag %s "%target_tag +
                                   "in checkout %s."%co_label)

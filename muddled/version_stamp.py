@@ -224,6 +224,11 @@ from muddled.utils import MuddleSortedDict, MuddleOrderedDict, \
         HashFile, GiveUp, truncate, LabelType, LabelTag, split_vcs_url, \
         sort_domains
 
+import logging
+def log(*args, **kwargs):
+    args = [str(arg) for arg in args]
+    logging.getLogger(__name__).warning(' '.join(args))
+
 CheckoutTupleV1 = namedtuple('CheckoutTupleV1', 'name repo rev rel dir domain co_leaf branch')
 
 # XXX Ideally we'd have a CheckoutTuple for v2 as well!
@@ -603,10 +608,10 @@ class VersionStamp(object):
         stamp.before = before        # remember for annotating the stamp file
 
         if not quiet:
-            print 'Finding all checkouts...',
+            log('Finding all checkouts...', end=' ')
         checkout_rules = list(builder.all_checkout_rules())
         if not quiet:
-            print 'found %d'%len(checkout_rules)
+            log('found %d'%len(checkout_rules))
 
         checkout_rules.sort()
         for rule in checkout_rules:
@@ -617,13 +622,13 @@ class VersionStamp(object):
                 except AttributeError:
                     stamp.problems.append("Rule for label '%s' has no VCS"%(label))
                     if not quiet:
-                        print stamp.problems[-1]
+                        log(stamp.problems[-1])
                     continue
                 if not quiet:
-                    print "Processing %s checkout '%s'"%(vcs_handler.short_name,
+                    log("Processing %s checkout '%s'"%(vcs_handler.short_name,
                                                  '(%s)%s'%(label.domain,label.name)
                                                            if label.domain
-                                                           else label.name)
+                                                           else label.name))
                 if label.domain:
                     domain_name = label.domain
                     domain_repo, domain_desc = builder.db.get_subdomain_info(domain_name)
@@ -632,7 +637,7 @@ class VersionStamp(object):
                 # We always want to specify the revision in the stamp file
                 if just_use_head:
                     if not quiet:
-                        print 'Forcing head'
+                        log('Forcing head')
                     rev = "HEAD"
                 else:
                     rev = vcs_handler.revision_to_checkout(builder, label, force=force,
@@ -664,26 +669,26 @@ class VersionStamp(object):
                 if options:
                     stamp.options[label] = options
             except GiveUp as exc:
-                print exc
+                log(exc)
                 stamp.problems.append(str(exc))
 
         if stamp.domains and not quiet:
             domain_names = stamp.domains.keys()
             domain_names.sort()
-            print 'Found domains:',' '.join(domain_names)
+            log('Found domains:',' '.join(domain_names))
 
         if len(stamp.checkouts) != len(checkout_rules):
             if not quiet:
-                print
-                print 'Unable to work out revision ids for all the checkouts'
+                log()
+                log('Unable to work out revision ids for all the checkouts')
                 if stamp.checkouts:
-                    print '- although we did work out %d of %s'%(len(stamp.checkouts),
-                            len(checkout_rules))
+                    log('- although we did work out %d of %s'%(len(stamp.checkouts),
+                            len(checkout_rules)))
                 if stamp.problems:
-                    print 'Problems were:'
+                    log('Problems were:')
                     for item in stamp.problems:
                         item.rstrip()
-                        print '* %s'%truncate(str(item),less=2)
+                        log('* %s'%truncate(str(item),less=2))
             if not stamp.problems:
                 # This should not, I think, happen, but just in case...
                 stamp.problems.append('Unable to work out revision ids for all the checkouts')
@@ -809,7 +814,7 @@ class VersionStamp(object):
                 for name, value in config.items("PROBLEMS"):
                     stamp.problems.append(value)
             else:
-                print 'Ignoring configuration section [%s]'%section
+                log('Ignoring configuration section [%s]'%section)
 
     @staticmethod
     def from_file(filename):
@@ -824,7 +829,7 @@ class VersionStamp(object):
 
         stamp = VersionStamp()
 
-        print 'Reading stamp file %s'%filename
+        log('Reading stamp file %s'%filename)
         fd = HashFile(filename, ignore_comments=True, ignore_blank_lines=True)
 
         config = make_RawConfigParser()
@@ -833,7 +838,7 @@ class VersionStamp(object):
         stamp_version = VersionStamp._extract_config_header(stamp, config)
         VersionStamp._extract_config_body(stamp, stamp_version, config)
 
-        print 'File has SHA1 hash %s'%fd.hash()
+        log('File has SHA1 hash %s'%fd.hash())
         return stamp
 
     def compare_checkouts(self, other, fd=sys.stdout):
@@ -1182,7 +1187,7 @@ class ReleaseStamp(VersionStamp):
 
         stamp = ReleaseStamp()
 
-        print 'Reading release file %s'%filename
+        log('Reading release file %s'%filename)
         fd = HashFile(filename, ignore_comments=True, ignore_blank_lines=True)
 
         config = make_RawConfigParser()
@@ -1209,7 +1214,7 @@ class ReleaseStamp(VersionStamp):
         VersionStamp._extract_config_body(stamp, stamp_version, config)
 
         hash = fd.hash()
-        print 'File has SHA1 hash %s'%hash
+        log('File has SHA1 hash %s'%hash)
 
         stamp.release_spec.hash = hash
 

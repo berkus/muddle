@@ -111,6 +111,11 @@ from muddled.version_control import register_vcs, VersionControlSystem
 from muddled.withdir import Directory
 from muddled.utils import GiveUp
 
+import logging
+def log(*args, **kwargs):
+    args = [str(arg) for arg in args]
+    logging.getLogger(__name__).warning(' '.join(args))
+
 g_supports_ff_only = None
 
 def git_supports_ff_only():
@@ -212,7 +217,7 @@ class Git(VersionControlSystem):
         """
         retcode, text= utils.run2("git status --porcelain", show_command=False)
         if retcode == 129:
-            print "Warning: Your git does not support --porcelain; you should upgrade it."
+            log("Warning: Your git does not support --porcelain; you should upgrade it.")
             retcode, text = utils.run2("git status", show_command=False)
             if text.find("working directory clean") >= 0:
                 text = ''
@@ -303,7 +308,7 @@ class Git(VersionControlSystem):
             # runs the command in a sub-shell, and thus its output is always
             # presented, regardless of the "verbose" setting. For the moment
             # at least, we'll stay compatible with that.
-            print out.rstrip()
+            log(out.rstrip())
 
         if repo.branch is None:
             remote = 'remotes/%s/master'%(upstream)
@@ -319,7 +324,7 @@ class Git(VersionControlSystem):
             # This may also be a revision specified in an "unstamp -update"
             # operation, which is why the message doesn't say it's the build
             # description we're obeying
-            print '++ Just changing to the revision explicitly requested for this checkout'
+            log('++ Just changing to the revision explicitly requested for this checkout')
             utils.shell(["git", "checkout", repo.revision])
         elif merge:
             # Just merge what we fetched into the current working tree
@@ -429,7 +434,7 @@ class Git(VersionControlSystem):
         """
         retcode, text = utils.run2("git status --porcelain", show_command=False)
         if retcode == 129:
-            print "Warning: Your git does not support --porcelain; you should upgrade it."
+            log("Warning: Your git does not support --porcelain; you should upgrade it.")
             retcode, text = utils.run2("git status", show_command=False)
 
         detached_head = self._is_detached_HEAD()
@@ -553,7 +558,7 @@ class Git(VersionControlSystem):
         Re-associate the local repository with its original remote repository,
         """
         if verbose:
-            print "Re-associating checkout '%s' with remote repository"%co_dir
+            log("Re-associating checkout '%s' with remote repository"%co_dir)
 
         # This is the special case where our "remote" is our origin...
         self._setup_remote('origin', remote_repo, verbose=verbose)
@@ -578,10 +583,10 @@ class Git(VersionControlSystem):
                 text = utils.indent(revision.strip(),'    ')
                 if force:
                     if verbose:
-                        print "'git describe --long' had problems with checkout" \
-                              " '%s'"%co_leaf
-                        print "    %s"%text
-                        print "using original revision %s"%orig_revision
+                        log("'git describe --long' had problems with checkout" \
+                              " '%s'"%co_leaf)
+                        log("    %s"%text)
+                        log("using original revision %s"%orig_revision)
                     return orig_revision
             else:
                 text = '    (it failed with return code %d)'%retcode
@@ -738,10 +743,10 @@ class Git(VersionControlSystem):
         NB: if 'before' is specified, 'force' is ignored.
         """
         if before:
-            print "git rev-list -n 1 --before='%s' HEAD"%before
+            log("git rev-list -n 1 --before='%s' HEAD"%before)
             retcode, revision = utils.run2("git rev-list -n 1 --before='%s' HEAD"%before,
                                            show_command=False)
-            print retcode, revision
+            log(retcode, revision)
             if retcode:
                 if revision:
                     text = utils.indent(revision.strip(),'    ')
@@ -758,10 +763,10 @@ class Git(VersionControlSystem):
                     text = utils.indent(revision.strip(),'    ')
                     if force:
                         if verbose:
-                            print "'git rev-parse HEAD' had problems with checkout" \
-                                  " '%s'"%co_leaf
-                            print "    %s"%text
-                            print "using original revision %s"%orig_revision
+                            log("'git rev-parse HEAD' had problems with checkout" \
+                                  " '%s'"%co_leaf)
+                            log("    %s"%text)
+                            log("using original revision %s"%orig_revision)
                         return orig_revision
                 else:
                     text = '    (it failed with return code %d)'%retcode

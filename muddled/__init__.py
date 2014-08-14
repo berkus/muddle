@@ -7,7 +7,5 @@ Muddle - A VCS-agnostic package build and configuration management system
 import muddled.vcs
 import logging
 
-# default level is warning, some test scripts test the output of muddle with the assumption that this is the case
+# Overridden by __main__ importing muddled.logs when run as a command
 logging.basicConfig(format="%(message)s", level=logging.WARNING)
-
-# TODO: write logs to timestamped files or similar

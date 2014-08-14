@@ -6,6 +6,7 @@ Tests the rest of muddled.
 import os
 import sys
 import subprocess
+import tempfile
 import traceback
 
 from support_for_tests import get_parent_dir
@@ -34,8 +35,7 @@ def cpio_unit_test():
     A brief test of the cpio module. Uses ``<tempname>/test.cpio``.
     """
 
-    tmpd = os.tempnam()
-    os.mkdir(tmpd)
+    tmpd = tempfile.mkdtemp()
     tmpf = os.path.join(tmpd, 'test.cpio')
 
     f1 = cpiofile.file_from_fs(__file__)  # A file we're fairly sure exists

@@ -24,6 +24,11 @@ import muddled.cpiofile as cpiofile
 from muddled.depend import Action
 from muddled.utils import GiveUp, LabelType, LabelTag
 
+import logging
+def log(*args, **kwargs):
+    args = [str(arg) for arg in args]
+    logging.getLogger(__name__).warning(' '.join(args))
+
 class CpioInstructionImplementor(object):
 
     def apply(self, builder, instruction, role, path):
@@ -144,7 +149,7 @@ class CpioDeploymentBuilder(Action):
                 base = bt
                 real_source_path = os.path.join(builder.role_install_path(l.role, l.domain))
 
-            print "Collecting %s  for deployment to %s .. "%(l,base)
+            log("Collecting %s  for deployment to %s .. "%(l,base))
             if (len(base) > 0 and base[0] != '/'):
                 base = "/%s"%(base)
 
@@ -153,7 +158,7 @@ class CpioDeploymentBuilder(Action):
 
         # Normalise the hierarchy ..
         the_hierarchy.normalise()
-        print "Filesystem hierarchy is:\n%s"%the_hierarchy.as_str(builder.db.root_path)
+        log("Filesystem hierarchy is:\n%s"%the_hierarchy.as_str(builder.db.root_path))
 
         if self.prune_function:
             self.prune_function(the_hierarchy)
@@ -178,26 +183,26 @@ class CpioDeploymentBuilder(Action):
             else:
                 base = bt
 
-            print "base = %s"%(base)
+            log("base = %s"%(base))
             lbl = depend.Label(LabelType.Package, "*", src.role, "*",
                                domain = src.domain)
-            print "Scanning instructions for role %s, domain %s .. "%(src.role, src.domain)
+            log("Scanning instructions for role %s, domain %s .. "%(src.role, src.domain))
             instr_list = builder.load_instructions(lbl)
             for lbl, fn, instrs in instr_list:
-                print "CPIO deployment: Applying instructions for role %s, label %s .. "%(src.role, lbl)
+                log("CPIO deployment: Applying instructions for role %s, label %s .. "%(src.role, lbl))
                 for instr in instrs:
                     iname = instr.outer_elem_name()
                     #print 'Instruction:', iname
                     if iname in app_dict:
-                        print 'Instruction:', str(instr)
+                        log('Instruction:', str(instr))
                         app_dict[iname].apply(builder, instr, lbl.role, base,
                                               the_hierarchy)
                     else:
-                        print 'Instruction:', iname
+                        log('Instruction:', iname)
                         raise GiveUp("CPIO deployments don't know about "
                                      "the instruction %s (lbl %s, file %s)"%(iname, lbl, fn))
         # .. and write the file.
-        print "> Writing %s .. "%deploy_file
+        log("> Writing %s .. "%deploy_file)
         the_hierarchy.render(deploy_file, True)
 
         if (self.compression_method is not None):
@@ -271,7 +276,7 @@ class CIApplyMknod(CpioInstructionImplementor):
 
         cpio_file.key_name = real_path
         #print "put_target_file %s"%real_path
-        print 'Adding device node %s'%real_path
+        log('Adding device node %s'%real_path)
         hierarchy.put_target_file(real_path, cpio_file)
 
 

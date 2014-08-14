@@ -25,6 +25,11 @@ from muddled.utils import split_vcs_url, sort_domains
 from muddled.version_control import checkout_from_repo
 from muddled.version_stamp import ReleaseSpec
 
+import logging
+def log(*args, **kwargs):
+    args = [str(arg) for arg in args]
+    logging.getLogger(__name__).warning(' '.join(args))
+
 logger = logging.getLogger("muddled.mechanics")
 # logger.setLevel(logging.INFO)
 
@@ -372,7 +377,7 @@ class Builder(object):
                     if not self.db.is_tag_done(checked_out):
                         raise MuddleBug("Build desc. checked out but tag not set!")
                 else:
-                    print "waiting for other process to load build description"
+                    log("waiting for other process to load build description")
                     # Hopefully this situation won't be common, the build description will usually be checked out
                     while not self.db.is_tag_done(checked_out):
                         time.sleep(.07)
@@ -726,9 +731,9 @@ class Builder(object):
             all_required = list(all_required)
             all_required.sort()
 
-            print "Clearing tags for %s"%(str(r.target))
+            log("Clearing tags for %s"%(str(r.target)))
             for l in all_required:
-                print '  %s'%l
+                log('  %s'%l)
 
             # Kill r.targt
             self.db.clear_tag(r.target)
@@ -775,9 +780,9 @@ class Builder(object):
         self.db.register_process()
 
         if len(labels) == 1:
-            print "Building %s" % labels[0]
+            logger.info("Building %s" % next(iter(labels)))
         else:
-            print "Building %d labels" % len(labels)
+            logger.info("Building %d labels" % len(labels))
 
         try:
 
@@ -896,7 +901,10 @@ class Builder(object):
             if r.action:
                 r.action.build_label(self, r.target)
         except:
+            logger.info("Exception whilst building label %s, with action %s" % (r.target, r.action),
+                        exc_info=True)
             self.db.set_rule_clear(r)
+
             raise
         finally:
             os.environ = old_env
@@ -1184,7 +1192,7 @@ class Builder(object):
         """
         build_desc_label = self.build_desc_label
         if verbose:
-            print '  The build description is', build_desc_label
+            log('  The build description is', build_desc_label)
         try:
             vcs = self.db.get_checkout_vcs(build_desc_label)
         except GiveUp:
@@ -1258,11 +1266,11 @@ class Builder(object):
         self.banned_roles.append((r1,domain1, r2,domain2))
 
     def print_banned_roles(self):
-        print "[ "
+        log("[ ")
         for j in self.banned_roles:
             (a,b,c,d) = j
-            print " - ( %s, %s, %s, %s ) "%(a,b,c,d)
-        print "]"
+            log(" - ( %s, %s, %s, %s ) "%(a,b,c,d))
+        log("]")
 
     def role_combination_acceptable_for_lib(self, r1, r2, domain1 = None, domain2 = None):
         """
@@ -2182,7 +2190,7 @@ def dynamic_load_build_desc(builder):
         return utils.dynamic_load(filename)
     except AttributeError as a:
         traceback.print_exc()
-        print "Cannot load %s: %s"%(filename, a)
+        log("Cannot load %s: %s"%(filename, a))
         raise MuddleBug("Cannot load build description %s"%filename)
     finally:
         sys.path = old_path
@@ -2291,11 +2299,11 @@ def _init_without_build_tree(muddle_binary, root_path, repo_location, build_desc
     database = db.Database(root_path)
     database.setup(repo_location, build_desc)
 
-    print "Initialised build tree in %s "%root_path
-    print "Repository: %s"%repo_location
-    print "Build description: %s"%build_desc
-    print
-    print "Checking out build description .. \n"
+    log("Initialised build tree in %s "%root_path)
+    log("Repository: %s"%repo_location)
+    log("Build description: %s"%build_desc)
+    log()
+    log("Checking out build description .. \n")
     return load_builder(root_path, muddle_binary, domain_params)
 
 

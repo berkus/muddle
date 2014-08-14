@@ -27,6 +27,11 @@ from muddled.utils import domain_subpath, split_vcs_url
 from muddled.depend import normalise_checkout_label
 from muddled.repository import Repository
 
+import logging
+def log(*args, **kwargs):
+    args = [str(arg) for arg in args]
+    logging.getLogger(__name__).warning(' '.join(args))
+
 logger = logging.getLogger("muddled.db")
 # logger.setLevel(logging.INFO)
 
@@ -269,7 +274,7 @@ def copy_tags(src_dir, tgt_dir, tag_label):
         src_con.execute("DETACH target")
         src_con.commit()
 
-    print "copying tags from %s to %s" % (src_dir, tgt_dir)
+    log("copying tags from %s to %s" % (src_dir, tgt_dir))
 
 def copy_tags_with(src_dir, tgt_dir, tags):
 
@@ -436,7 +441,7 @@ class Database(object):
 
         self.logger.debug("New db at %s" % root_path)
 
-        self.root_path = root_path
+        self.root_path = os.path.abspath(root_path)
         utils.ensure_dir(os.path.join(self.root_path, ".muddle"))
         self.RootRepository_pathfile = PathFile(self.db_file_name("RootRepository"))
         self.Description_pathfile = PathFile(self.db_file_name("Description"))
@@ -755,7 +760,7 @@ class Database(object):
             raise GiveUp('There is no checkout data registered for label %s, checkout data: %s'%checkout_label)
 
     def dump_checkout_paths(self):
-        print "> Checkout paths .."
+        log("> Checkout paths ..")
         keys = self.checkout_data.keys()
         max = 0
         for label in keys:
@@ -764,7 +769,7 @@ class Database(object):
                 max = length
         keys.sort()
         for label in keys:
-            print "%-*s -> %s"%(max, label, self.checkout_data[label].location)
+            log("%-*s -> %s"%(max, label, self.checkout_data[label].location))
 
     def get_checkout_path(self, checkout_label):
         """
@@ -828,7 +833,7 @@ class Database(object):
         report the full Repository definition (which shows branch and revision
         as well).
         """
-        print "> Checkout repositories .."
+        log("> Checkout repositories ..")
         keys = self.checkout_data.keys()
         max = 0
         for label in keys:
@@ -838,10 +843,10 @@ class Database(object):
         keys.sort()
         if just_url:
             for label in keys:
-                print "%-*s -> %s"%(max, label, self.checkout_data[label].repo)
+                log("%-*s -> %s"%(max, label, self.checkout_data[label].repo))
         else:
             for label in keys:
-                print "%-*s -> %r"%(max, label, self.checkout_data[label].repo)
+                log("%-*s -> %r"%(max, label, self.checkout_data[label].repo))
 
     def get_checkout_repo(self, checkout_label):
         """
@@ -858,7 +863,7 @@ class Database(object):
         Report on the version control systems associated with our checkouts,
         and any VCS options.
         """
-        print "> Checkout version control systems .."
+        log("> Checkout version control systems ..")
         keys = self.checkout_data.keys()
         max = 0
         for label in keys:
@@ -869,9 +874,9 @@ class Database(object):
         for label in keys:
             options = self.checkout_data[label].options
             if options:
-                print "%-*s -> %s %s"%(max, label, self.checkout_data[label].vcs_handler, options)
+                log("%-*s -> %s %s"%(max, label, self.checkout_data[label].vcs_handler, options))
             else:
-                print "%-*s -> %s"%(max, label, self.checkout_data[label].vcs_handler)
+                log("%-*s -> %s"%(max, label, self.checkout_data[label].vcs_handler))
 
     def get_checkout_vcs(self, checkout_label):
         """
@@ -920,7 +925,7 @@ class Database(object):
         self.domain_build_desc_label[domain] = normalise_checkout_label(checkout_label)
 
     def dump_domain_build_desc_labels(self):
-        print "> Build descriptions for each domain .."
+        log("> Build descriptions for each domain ..")
         keys = self.domain_build_desc_label.keys()
         max = 0
         for domain in keys:
@@ -930,8 +935,8 @@ class Database(object):
                     max = length
         keys.sort()
         for domain in keys:
-            print "%-*s -> %s"%(max, domain if domain is not None else '',
-                                self.domain_build_desc_label[domain])
+            log("%-*s -> %s"%(max, domain if domain is not None else '',
+                                self.domain_build_desc_label[domain]))
 
     def get_domain_build_desc_label(self, domain):
         """
@@ -968,8 +973,8 @@ class Database(object):
         If 'just_name' is true, then report the licenses name, otherwise
         report the full License definition.
         """
-        print "Checkout licenses are:"
-        print
+        log("Checkout licenses are:")
+        log()
         keys = self.checkout_licenses.keys()
         max = 0
         for label in keys:
@@ -979,10 +984,10 @@ class Database(object):
         keys.sort()
         if just_name:
             for label in keys:
-                print "* %-*s %s"%(max, label, self.checkout_licenses[label])
+                log("* %-*s %s"%(max, label, self.checkout_licenses[label]))
         else:
             for label in keys:
-                print "* %-*s %r"%(max, label, self.checkout_licenses[label])
+                log("* %-*s %r"%(max, label, self.checkout_licenses[label]))
 
     def get_checkout_license(self, checkout_label, absent_is_None=False):
         """
@@ -1215,7 +1220,7 @@ class Database(object):
         report the full Repository definition (which shows branch and revision
         as well).
         """
-        print "> Upstream repositories .."
+        log("> Upstream repositories ..")
         keys = self.upstream_repositories.keys()
         keys.sort()
 
@@ -1249,17 +1254,17 @@ class Database(object):
             format3 = "    %r  %s"
 
         if co_labels:
-            print format1%(orig_repo, depend.label_list_to_string(sorted(co_labels),
-                                                                  join_with=', '))
+            log(format1%(orig_repo, depend.label_list_to_string(sorted(co_labels),
+                                                                  join_with=', ')))
         else:
-            print format2%orig_repo
+            log(format2%orig_repo)
         try:
             upstream_dict = self.upstream_repositories[orig_repo]
             for upstream_repo in sorted(upstream_dict.keys()):
-                print format3%(upstream_repo,
-                               ', '.join(sorted(upstream_dict[upstream_repo])))
+                log(format3%(upstream_repo,
+                               ', '.join(sorted(upstream_dict[upstream_repo]))))
         except KeyError:
-            print '  Has no upstream repositories'
+            log('  Has no upstream repositories')
 
     def build_desc_file_name(self):
         """
@@ -1831,7 +1836,7 @@ class Database(object):
 
     def _connect_root_db(self):
         if self.is_domain_db():
-            raise MuddleBug("Attempting to connect to root db when inside a subdomain")
+            raise MuddleBug("Attempting to connect to root db when inside a subdomain, root_path: %s" % self.root_path)
         return _connect_db(self.root_path)
 
     def is_domain_db(self):

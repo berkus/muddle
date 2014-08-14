@@ -20,6 +20,10 @@ from muddled.depend import Label
 
 import os
 
+import logging
+def log(*args, **kwargs):
+    args = [str(arg) for arg in args]
+    logging.getLogger(__name__).warning(' '.join(args))
 
 class InitScriptBuilder(pkg.PackageBuilder):
     """
@@ -49,7 +53,7 @@ class InitScriptBuilder(pkg.PackageBuilder):
 
             utils.ensure_dir(tgt_dir)
             tgt_file = os.path.join(tgt_dir, self.script_name)
-            print "> Writing %s .. "%(tgt_file)
+            log("> Writing %s .. "%(tgt_file))
             subst.subst_file(src_file, tgt_file, None, os.environ)
             os.chmod(tgt_file, 0755)
 
