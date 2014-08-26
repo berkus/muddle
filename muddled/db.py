@@ -202,9 +202,7 @@ def _connect_db(root_path):
             conn.execute("CREATE TABLE IF NOT EXISTS processes "
                             "(master        BOOLEAN DEFAULT (0), "
                              "pid           INTEGER UNIQUE, "
-                             "uuid          UUID PRIMARY KEY ON CONFLICT FAIL, "
-                             "pause_requested_by UUID DEFAULT (NULL), "
-                             "paused        BOOLEAN DEFAULT (0));")
+                             "uuid          UUID PRIMARY KEY ON CONFLICT FAIL);")
 
             # maps labels to the matching rules
             conn.execute("CREATE TABLE IF NOT EXISTS labels_to_rules "
@@ -268,13 +266,19 @@ def copy_tags(src_dir, tgt_dir, tag_label):
     with _connect_db(src_dir) as src_con:
         src_con.execute("ATTACH ? AS target", (db_path(tgt_dir),))
         src_con.commit()
-        src_con.execute("INSERT OR REPLACE INTO target.labels SELECT * FROM labels WHERE label LIKE ?",
-                        (_label_wild_convert(tag_label),))
+        if tag_label.is_wildcard():
+            src_con.execute("INSERT OR REPLACE INTO target.labels SELECT * FROM labels WHERE label LIKE ?",
+                            (_label_wild_convert(tag_label),))
+        else:
+            src_con.execute("INSERT OR REPLACE INTO target.labels SELECT * FROM labels WHERE label=?",
+                            (tag_label,))
         src_con.commit()
         src_con.execute("DETACH target")
         src_con.commit()
 
-    log("copying tags from %s to %s" % (src_dir, tgt_dir))
+    log("copying tags from %s to %s matching %s" % (src_dir, tgt_dir, tag_label))
+    logger.warning("".join(traceback.format_stack()))
+
 
 def copy_tags_with(src_dir, tgt_dir, tags):
 
@@ -283,9 +287,12 @@ def copy_tags_with(src_dir, tgt_dir, tags):
     with _connect_db(src_dir) as src_con:
         src_con.execute("ATTACH ? AS target", (db_path(tgt_dir),))
         src_con.commit()
-        for tag in tags:
-            src_con.execute("INSERT OR REPLACE INTO target.labels SELECT * FROM labels WHERE label=?",
-                            (tag,))
+        # for tag in tags:
+        #     src_con.execute("INSERT OR REPLACE INTO target.labels SELECT * FROM labels WHERE label=? LIMIT 1",
+        #                     tag)
+        src_con.execute("INSERT OR REPLACE INTO target.labels SELECT * FROM labels WHERE label IN (%s)"
+                        % ", ".join(['?' for _ in tags]),
+                        tags)
         src_con.commit()
         src_con.execute("DETACH target")
         src_con.commit()
@@ -1779,57 +1786,6 @@ class Database(object):
             conn.execute("delete from processes where pid=? and uuid=?",
                          (os.getpid(), UUID))
             conn.commit()
-
-    def request_pause_others(self):
-        if not self.is_master():
-            raise MuddleBug("requested pause whilst not being master")
-        with self._connect_root_db() as conn:
-            conn.execute("update or fail processes set pause_requested_by=? where pid!=? and "
-                         "uuid!=? and pause_requested_by is NULL",
-                         (UUID, os.getpid(), UUID))
-            conn.commit()
-
-    def release_pause_request(self):
-        if not self.is_master():
-            raise MuddleBug("requested pause release whilst not being master")
-        with self._connect_root_db() as conn:
-            conn.execute("update or fail processes set pause_requested_by=NULL where pid!=? and "
-                         "uuid!=? and pause_requested_by=?",
-                         (os.getpid(), UUID, UUID))
-            conn.commit()
-
-    def are_others_paused(self):
-        with self._connect_root_db() as conn:
-            cursor = conn.execute("select * from processes where pid!=? and uuid!=? and paused!=0",
-                         (os.getpid(), UUID))
-            return cursor.fetchone() is not None
-
-    def pause(self):
-        with self._connect_root_db() as conn:
-            conn.execute("update or fail processes set paused = 1 where pid=? and uuid=? and "
-                         "pause_requested_by is not null",
-                         (os.getpid(), UUID))
-            conn.commit()
-
-    def unpause(self):
-        with self._connect_root_db() as conn:
-            conn.execute("update or fail processes set paused = 0 where pid=? and uuid=? and "
-                         "pause_requested_by is null",
-                         (os.getpid(), UUID))
-            conn.commit()
-
-    def is_paused(self):
-        with self._connect_root_db() as conn:
-            cursor = conn.execute("select * from processes where pid=? and uuid=? and paused=0",
-                         (os.getpid(), UUID))
-            return cursor.fetchone() is not None
-
-    def is_pause_requested(self):
-        with self._connect_root_db() as conn:
-            cursor = conn.execute("select * from processes where pid=? and uuid=? "
-                                  "and pause_requested_by is not NULL",
-                                  (os.getpid(), UUID))
-            return cursor.fetchone() is not None
 
     def _connect_domain_db(self, domain):
         return _connect_db(self.domain_root_dir(domain))

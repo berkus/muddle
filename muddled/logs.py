@@ -30,7 +30,7 @@ base_dict = {
 
     'formatters': {
         'standard': {
-            'format': '%(asctime)-15s [%(levelname)-8s] %(process)-5s %(name)-20s: %(message)s'
+            'format': '%(asctime)-15s [%(levelname)-8s] %(process)-5s %(name)-22s: %(message)s'
         },
         'simple': {
             'format': '%(message)s'
@@ -38,8 +38,14 @@ base_dict = {
     },
     'filters': {
         'local_filter': {
-            (): 'LocalFilter'
-        }
+            (): 'muddled.logs.LocalFilter',
+        },
+        'debug_filter': {
+            (): 'muddled.logs.DebugPartFilter',
+            # debug contains a list of paths for which all logged messages are to have their
+            # level raised to atleast warning so they are printed into the console.
+            'debug': ['muddled.db'],
+        },
     },
     'handlers': {
         'console': {
@@ -52,6 +58,7 @@ base_dict = {
     },
     'root': {
         'handlers': ['console'],
+        'filters': ['debug_filter'],
         # assumes that the file_level will log more than or equal to term_level
         'level': file_level,
         'propagate': True
@@ -96,6 +103,15 @@ class LocalFilter(logging.Filter):
         # return True
         return record.process == self.pid
 
+class DebugPartFilter(logging.Filter):
+    def __init__(self, debug=[]):
+        self.debug = debug
+        super(DebugPartFilter, self).__init__()
+
+    def filter(self, record):
+        for name in self.debug:
+            if name in record.name and record.level < logging.WARNING:
+                record.level = logging.WARNING
 
 # from https://docs.python.org/2.7/howto/logging-cookbook.html#network-logging
 class LogRecordStreamHandler(SocketServer.StreamRequestHandler):

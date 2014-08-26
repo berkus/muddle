@@ -1607,6 +1607,7 @@ class Init(Command):
                 sync.with_build_tree(builder, current_dir, map(str, subdomain_build_descs))
 
         log("Done.\n")
+        shutil.move('.muddle.log', '.muddle/log')
 
 
 @command('bootstrap', CAT_INIT)

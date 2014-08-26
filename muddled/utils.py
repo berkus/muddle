@@ -30,9 +30,12 @@ import cPickle
 import muddled
 
 import logging
+
+logger = logging.getLogger(__name__)
+
 def log(*args, **kwargs):
     args = [str(arg) for arg in args]
-    logging.getLogger(__name__).warning(' '.join(args))
+    logger.warning(' '.join(args))
 
 try:
     import curses
@@ -710,7 +713,7 @@ def shell(thing, env=None, show_command=True):
     if not isinstance(thing, basestring):
         thing = _stringify_cmd(thing)
     if show_command:
-        sys.stdout.write('> %s\n'%thing)
+        logger.warning('> %s'%thing)
     if env is None: # so, for instance, an empty dictionary is allowed
         env = os.environ
     try:
@@ -740,7 +743,7 @@ def get_cmd_data(thing, env=None, show_command=False):
     """
     thing = _rationalise_cmd(thing)
     if show_command:
-        sys.stdout.write('> %s\n'%_stringify_cmd(thing))
+        logger.warning('> %s'%_stringify_cmd(thing))
     if env is None: # so, for instance, an empty dictionary is allowed
         env = os.environ
     try:
@@ -830,7 +833,7 @@ def run2(thing, env=None, show_command=True, show_output=False):
     """
     thing = _rationalise_cmd(thing)
     if show_command:
-        sys.stdout.write('> %s\n'%_stringify_cmd(thing))
+        logger.warning('> %s'%_stringify_cmd(thing))
         sys.stdout.flush()
     if env is None: # so, for instance, an empty dictionary is allowed
         env = os.environ
@@ -838,7 +841,7 @@ def run2(thing, env=None, show_command=True, show_output=False):
     proc = subprocess.Popen(thing, env=env, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
     for data in proc.stdout:
         if show_output:
-            sys.stdout.write(data)
+            logger.warning(data)
             sys.stdout.flush()
         text.append(data)
     proc.wait()
@@ -874,7 +877,7 @@ def run3(thing, env=None, show_command=True, show_output=False):
     """
     thing = _rationalise_cmd(thing)
     if show_command:
-        sys.stdout.write('> %s\n'%_stringify_cmd(thing))
+        logger.warning('> %s'%_stringify_cmd(thing))
     if env is None: # so, for instance, an empty dictionary is allowed
         env = os.environ
     all_stdout_text = []
@@ -904,7 +907,7 @@ def run3(thing, env=None, show_command=True, show_output=False):
                 read_list.remove(proc.stdout)
             else:
                 if show_output:
-                    sys.stdout.write(stdout_text)
+                    logger.warning(stdout_text)
                 all_stdout_text.append(stdout_text)
         if proc.stderr in rlist:
             # Comment as above
@@ -2261,21 +2264,14 @@ def run_sync_muddle(args, builder, env=None, show_command=True, show_output=True
     If root is True then it is necessary to be the master process and will use sudo to perform the operation
     """
 
-    #TODO: find a nicer way to get password input cleanly than pausing all other processes
     if root:
         if not builder.db.is_master():
             raise MuddleBug("attempted to run %s with input %s with root whilst not being the "
                             "master process" % (args,input))
-        builder.db.request_pause_others()
-        while not builder.db.are_others_paused():
-            builder.db.request_pause_others()
-            time.sleep(0.2)
 
     proc = run_async_muddle(args, env, show_command, show_output, input, root)
 
     proc.wait()
-    if root:
-        builder.db.release_pause_request()
     return proc.returncode
 
 def run_async_muddle(args, env=None, show_command=True, show_output=True, input=None, input_by_stdin=True, root=False):
@@ -2303,7 +2299,7 @@ def run_async_muddle(args, env=None, show_command=True, show_output=True, input=
         cmd_seq.append(cPickle.dumps(input))
 
     if show_command:
-        sys.stdout.write('> %s\n'%_stringify_cmd(cmd_seq))
+        logger.warning('> %s'%_stringify_cmd(cmd_seq))
         sys.stdout.flush()
     if show_output:
         stdout=stderr=None

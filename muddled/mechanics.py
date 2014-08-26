@@ -858,8 +858,6 @@ class Builder(object):
                 logger.info("Ran out of qualifying targets")
                 break
 
-            self._pause_if_requested()
-
             if not rule and use_targets and targets:
                 # targets unbuilt, there may be many rules that depend on the rules currently being processed
                 # so wait for a while to reduce the frequency of db access then try again
@@ -881,13 +879,6 @@ class Builder(object):
                 self.db.set_rule_done(rule)
 
         logger.info("Stopped db build labels with master: %s" % allow_master)
-
-    def _pause_if_requested(self):
-        if self.db.is_pause_requested():
-            self.db.pause()
-            while self.db.is_pause_requested():
-                time.sleep(0.1)
-            self.db.unpause()
 
     def _build_target(self, r, silent=False):
 

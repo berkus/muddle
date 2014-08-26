@@ -226,7 +226,7 @@ def run2(thing, show_command=True, show_output=True):
     proc = subprocess.Popen(thing, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
     for data in proc.stdout:
         if show_output:
-            sys.stdout.write(data)
+            logger.warning(data)
         text.append(data)
     proc.wait()
     text = ''.join(text)
@@ -281,7 +281,7 @@ def run3(thing, show_command=True, show_output=True):
                 read_list.remove(proc.stdout)
             else:
                 if show_output:
-                    sys.stdout.write(stdout_text)
+                    logger.warning(stdout_text)
                 all_stdout_text.append(stdout_text)
         if proc.stderr in rlist:
             # Comment as above

@@ -1385,8 +1385,8 @@ class DistributeCheckout(DistributeAction):
     def build_label(self, builder, label):
         name, target_dir = builder.get_distribution()
 
-        logger.warning("dict: %s" % self.distributions)
-        logger.warning("key: %s" % name)
+        logger.debug("dict: %s" % self.distributions)
+        logger.debug("key: %s" % name)
 
         copy_vcs, just = self.distributions[name]
 
