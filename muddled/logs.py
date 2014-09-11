@@ -17,10 +17,14 @@ import logging.config
 # socket server that any other muddle running in the same directory connects to.
 from muddled.utils import MuddleBug
 
-file_level = 'INFO'
+file_level = 'DEBUG'
 
 # most test scripts depend on term_level being WARNING
 term_level = 'WARNING'
+
+# List of handlers to display debugging level logging from.
+# Handler names are typically module names.
+debugging=[]
 
 base_dict = {
     'version': 1,
@@ -40,12 +44,6 @@ base_dict = {
         'local_filter': {
             (): 'muddled.logs.LocalFilter',
         },
-        'debug_filter': {
-            (): 'muddled.logs.DebugPartFilter',
-            # debug contains a list of paths for which all logged messages are to have their
-            # level raised to atleast warning so they are printed into the console.
-            'debug': ['muddled.db'],
-        },
     },
     'handlers': {
         'console': {
@@ -58,7 +56,6 @@ base_dict = {
     },
     'root': {
         'handlers': ['console'],
-        'filters': ['debug_filter'],
         # assumes that the file_level will log more than or equal to term_level
         'level': file_level,
         'propagate': True
@@ -103,15 +100,14 @@ class LocalFilter(logging.Filter):
         # return True
         return record.process == self.pid
 
-class DebugPartFilter(logging.Filter):
-    def __init__(self, debug=[]):
-        self.debug = debug
-        super(DebugPartFilter, self).__init__()
+class DebugFilter(logging.Filter):
+    def __init__(self):
+        super(DebugFilter, self).__init__()
 
     def filter(self, record):
-        for name in self.debug:
-            if name in record.name and record.level < logging.WARNING:
-                record.level = logging.WARNING
+        record.levelno = max(record.levelno, logging.WARNING)
+        return True
+
 
 # from https://docs.python.org/2.7/howto/logging-cookbook.html#network-logging
 class LogRecordStreamHandler(SocketServer.StreamRequestHandler):
@@ -188,9 +184,7 @@ def init(root=None):
         log_file = os.path.join(root, '.muddle.log')
         # No .muddle directory to nicely contain the log file
 
-        server_dict['handlers']['file']['level'] = term_level
-        # so by preference don't litter random directories with .muddle.log files
-        # unless there is something at least moderately important to record
+        # TODO: store muddle logs nicely when outside of a muddle build tree (temporary files?)
 
     else:
         log_file = os.path.join(root, '.muddle/log')
@@ -216,14 +210,18 @@ def init(root=None):
                 rolled=True
         if not rolled:
             raise MuddleBug("logging seems to be missing a rotating file handler on the root logger?")
-        if "_sub" in " ".join(sys.argv[1:]):
-            raise MuddleBug("running socket server debug for non-internal process")
+        # if sys.argv[1].startswith("_sub"):
+        #     raise MuddleBug("running socket server debug for non-internal process")
     except socket.error:
         # assumed to be erroring because the socket is bound by a relevant main muddle process
         client_dict['handlers']['socket']['port'] = port
         logging.config.dictConfig(client_dict)
-        if "_sub" not in " ".join(sys.argv[1:]):
-            raise MuddleBug("running socket client debug for internal process")
+        # if not sys.argv[1].startswith("_sub"):
+        #     raise MuddleBug("running socket client debug for internal process")
         # logging.getLogger("test").warning("!!!!TEST WARNING in %s for %s" % (os.getcwd(), root))
-    logging.getLogger().setLevel(logging.INFO)
+    for module in debugging:
+        logger = logging.getLogger(module)
+        logger.addFilter(DebugFilter())
+        logger.setLevel(logging.DEBUG)
+    logging.getLogger().setLevel(min(getattr(logging, file_level), getattr(logging, term_level)))
     logging.getLogger("muddled").info("Started with 'muddle %s'" % " ".join(sys.argv[1:]))

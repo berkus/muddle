@@ -2315,14 +2315,6 @@ def run_async_muddle(args, env=None, show_command=True, show_output=True, input=
     else:
         stdin=subprocess.PIPE
 
-    # opens up a new terminal and runs muddle in it, only remaining open if an error code occurs
-    # only present for debugging purposes
-    # errors occur in the test scripts if the terminal command opens a non-child process as the proper
-    # terminal with the launch script returning immediately as the main build can delete the database while
-    # the subprocess is still loading the build description.
-    cmd_seq = ["xterm", "-e", "bash -c '"
-                    "if ! %s; then read -p \"\n\ndone\"; fi'  " % (" ".join(cmd_seq))]
-
     proc = subprocess.Popen(cmd_seq, env=env, stdout=stdout, stderr=stderr, stdin=stdin)
 
     if input is not None and input_by_stdin:

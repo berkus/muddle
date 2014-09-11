@@ -52,7 +52,6 @@ def log(*args, **kwargs):
     logging.getLogger(__name__).warning(' '.join(args))
 
 logger = logging.getLogger('muddled.distribute')
-logger.setLevel(logging.DEBUG)
 
 VERBOSE=False       # should copy_without be quiet
 
@@ -1390,7 +1389,6 @@ class DistributeCheckout(DistributeAction):
 
         copy_vcs, just = self.distributions[name]
 
-
         logger.debug('DistributeCheckout %s (%s VCS) to %s'%(label,
                 'without' if copy_vcs else 'with', target_dir))
 
@@ -2167,5 +2165,15 @@ def distribute(builder, name, target_dir, with_versions_dir=False,
 
     log('Building %d /distribute label%s'%(num_labels,
             '' if num_labels==1 else 's'))
-    for label in distribution_labels:
-        builder.build_label(label)
+
+    for label in builder.ruleset.map.iterkeys():
+        if label.tag == 'distributed':
+            label.transient = False
+            # The multiprocess build strategy depends upon transient rules having idempotent actions
+            # This assumption fails for many distribute rules due to many version control being read only.
+            # TODO: add a system for being transient across a session rather than transient across a process
+    logger.info("building %s" % distribution_labels)
+    builder.build_labels(distribution_labels, master=True)
+    for label in builder.ruleset.map.iterkeys():
+        if label.tag == 'distributed':
+            builder.db.clear_tag(label)

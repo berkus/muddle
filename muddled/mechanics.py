@@ -31,7 +31,6 @@ def log(*args, **kwargs):
     logging.getLogger(__name__).warning(' '.join(args))
 
 logger = logging.getLogger("muddled.mechanics")
-# logger.setLevel(logging.INFO)
 
 class ErrorInBuildDescription(GiveUp):
     """We want to be able to distinguish this exception *in this module*
@@ -41,9 +40,6 @@ class ErrorInBuildDescription(GiveUp):
     pass
 
 build_name_re = re.compile(r"[A-Za-z0-9_-]+")
-
-
-#process_pool = multiprocessing.pool.ThreadPool()
 
 def check_build_name(name):
     """Check a build name for legality.
@@ -141,6 +137,8 @@ class Builder(object):
         # XXX -----------------------------------------------------------------
         # XXX What used to be in the Invocation constructor
         self.db = db.Database(root_path)
+        if (not self.db.is_domain_db()) and (not self.db.other_processes_exist()):
+            self.db.clear_parameters()
         self.ruleset = depend.RuleSet()
         self.env = {}
         self.default_roles = []
@@ -166,7 +164,6 @@ class Builder(object):
         # The current distribution name and target directory, as a tuple,
         # or actually None, since we've not set it yet
         # directory with each...
-        self.distribution = None
 
         # By default, we have an "empty" release spec, since we're not
         # normally a release build
@@ -180,7 +177,7 @@ class Builder(object):
         # (explicitly) specifies its own branch or revision.
         self._follow_build_desc_branch = False
 
-        self.num_procs = 4
+        self.num_procs = 1
         self.building = False
 
     @property
@@ -223,15 +220,18 @@ class Builder(object):
     def set_distribution(self, name, target_dir):
         """Set the current distribution name and target directory.
         """
-        self.distribution = (name, target_dir)
+        self.db.set_parameter("name", name)
+        self.db.set_parameter("target_dir", target_dir)
 
     def get_distribution(self):
         """Retrieve the current distribution name and target directory.
 
         Raises GiveUp if there is no current distribution set.
         """
-        if self.distribution:
-            return self.distribution
+        name = self.db.get_parameter("name")
+        target_dir = self.db.get_parameter("target_dir")
+        if name and target_dir:
+            return (name, target_dir)
         else:
             raise GiveUp('No distribution name or target directory set')
 
@@ -877,6 +877,9 @@ class Builder(object):
                 logger.info("Starting building rule %s" % rule)
                 self._build_target(rule, silent=silent)
                 self.db.set_rule_done(rule)
+                if rule.target.transient:
+                    logger.info("transient rules done: %s" %
+                                ", ".join([str(l) for l in self.db.local_tags]))
 
         logger.info("Stopped db build labels with master: %s" % allow_master)
 
@@ -884,7 +887,11 @@ class Builder(object):
 
         old_env = os.environ.copy()
 
-        logger.debug("!!Building %s" % r)
+        if not silent:
+            # TODO: regain previous handling of silent, currently silent is False too much of the time
+            pass
+
+        logger.info("> Building %s" % r.target)
         # Set up the environment for building this label
         try:
             self._build_label_env(r.target, env_store)
@@ -899,7 +906,7 @@ class Builder(object):
             raise
         finally:
             os.environ = old_env
-        logger.debug("!!Built %s" % r)
+        logger.info("!!Built %s" % r)
 
 
     @property

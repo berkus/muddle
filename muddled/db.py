@@ -5,7 +5,9 @@ held in root/.muddle
 import StringIO
 
 import errno
+from itertools import groupby
 import logging
+from operator import attrgetter
 import os
 import re
 import xml.dom
@@ -136,6 +138,8 @@ class CheckoutData(object):
 def db_path(root_path):
     return os.path.join(root_path,".muddle","tag_db")
 
+open_connections = {}
+
 def _connect_db(root_path):
     """
     Opens an sqlite3 connection to the tag_db database given a root path to a buildtree or subdomain
@@ -143,6 +147,16 @@ def _connect_db(root_path):
     root database requires additional tables and should be initialised by creating a database object
     at its root.
     """
+
+    if open_connections.get(root_path):
+        logger.error("Attempting recursive access to %s!" % root_path)
+        logger.info("second conn stack: "+"".join(traceback.format_stack()))
+        logger.info("first conn stack: "+"".join(open_connections.get(root_path)))
+        raise MuddleBug("Accessed database %s while connection is already open, potential deadlock" % root_path)
+    else:
+        open_connections[root_path] = traceback.format_stack()
+
+    start_trace = traceback.format_stack()
     db_path_ = os.path.join(root_path,".muddle","tag_db")
     (dir,name) = os.path.split(db_path_)
     utils.ensure_dir(dir)
@@ -150,8 +164,7 @@ def _connect_db(root_path):
     root = not os.path.exists(os.path.join(root_path,".muddle","am_subdomain"))
 
     #assuming that if a database exists at the location then it has atleast the tables setup.
-    conn = sqlite3.connect(db_path_, timeout=11, detect_types=sqlite3.PARSE_DECLTYPES)
-    main_close = conn.close
+    conn = sqlite3.connect(db_path_, timeout=30, detect_types=sqlite3.PARSE_DECLTYPES)
     start_proc = time.clock()
     start_real = time.time()
     class TimedConn():
@@ -184,13 +197,16 @@ def _connect_db(root_path):
                 logger.log(level, "    proc: %s" % elapsed_proc)
                 logger.log(level, "    real: %s" % elapsed_real)
                 if level >= logging.WARNING:
-                    logger.log(level, traceback.format_stack())
+                    logger.log(level, "startup trace: " + "".join(start_trace))
+                    logger.log(level, "ending trace: "+"".join(traceback.format_stack()))
         def close(self):
             self.time()
             self.conn.close()
+            del open_connections[root_path]
         def __exit__(self, *args, **kwargs):
             self.time()
             self.conn.__exit__(*args, **kwargs)
+            del open_connections[root_path]
     conn = TimedConn(conn)
     conn.row_factory = sqlite3.Row
     if not setup:
@@ -198,6 +214,15 @@ def _connect_db(root_path):
                         "(label LABEL PRIMARY KEY, "
                          "done BOOLEAN DEFAULT (0),"
                          "transient BOOLEAN DEFAULT (0));")
+
+        # committed is 0 where it is part of the current run.
+        # committed will be 1 to indicate it is stored for the next command when
+        # the other parts are converted to read from the db rather than a file.
+        conn.execute("CREATE TABLE IF NOT EXISTS just_pulled "
+                        "(label         LABEL,"
+                         "committed     BOOLEAN DEFAULT (0),"
+                         "PRIMARY KEY (label, committed) ON CONFLICT IGNORE);")
+
         if root:
             conn.execute("CREATE TABLE IF NOT EXISTS processes "
                             "(master        BOOLEAN DEFAULT (0), "
@@ -221,6 +246,10 @@ def _connect_db(root_path):
                             "(target        LABEL PRIMARY KEY,"
                              "req_master    BOOLEAN DEFAULT (0));")
 
+            conn.execute("CREATE TABLE IF NOT EXISTS parameters "
+                            "(key           PRIMARY KEY,"
+                             "value);")
+
             conn.execute("CREATE TABLE IF NOT EXISTS rules "
                             "(target        LABEL PRIMARY KEY, "
                              "transient     BOOLEAN DEFAULT (0),"
@@ -234,13 +263,6 @@ def _connect_db(root_path):
                              "timestamp     TIMESTAMP DEFAULT (CURRENT_TIMESTAMP), "
                              "owner_uuid    UUID);")
 
-            # committed is 0 where it is part of the current run.
-            # committed will be 1 to indicate it is stored for the next command when
-            # the other parts are converted to read from the db rather than a file.
-            conn.execute("CREATE TABLE IF NOT EXISTS just_pulled "
-                            "(label         LABEL,"
-                             "committed     BOOLEAN DEFAULT (0),"
-                             "PRIMARY KEY (label, committed) ON CONFLICT IGNORE);")
         conn.commit()
 
     return conn
@@ -260,8 +282,16 @@ def copy_tags(src_dir, tgt_dir, tag_label):
     # Within a db the table labels should only contain labels for that domain,
     # subdomains contain their own labels tables
 
+    logger.warning("copying tags from %s\n"
+                   "               to %s\n"
+                   "        matching %s" % (src_dir, tgt_dir, tag_label))
+
+    src_dir = os.path.join(src_dir, domain_subpath(tag_label.domain))
+    tgt_dir = os.path.join(tgt_dir, domain_subpath(tag_label.domain))
+
     # Ensures that tables are defined in the target db
-    _connect_db(tgt_dir).close()
+    with _connect_db(tgt_dir) as conn:
+        pass
 
     with _connect_db(src_dir) as src_con:
         src_con.execute("ATTACH ? AS target", (db_path(tgt_dir),))
@@ -275,27 +305,46 @@ def copy_tags(src_dir, tgt_dir, tag_label):
         src_con.commit()
         src_con.execute("DETACH target")
         src_con.commit()
-
-    log("copying tags from %s to %s matching %s" % (src_dir, tgt_dir, tag_label))
-    logger.warning("".join(traceback.format_stack()))
+    logger.info("tag copying done")
 
 
 def copy_tags_with(src_dir, tgt_dir, tags):
+    # Within a db the table labels should only contain labels for that domain,
+    # subdomains contain their own labels tables
 
-    # Ensures that tables are defined in the target db
-    _connect_db(tgt_dir).close()
-    with _connect_db(src_dir) as src_con:
-        src_con.execute("ATTACH ? AS target", (db_path(tgt_dir),))
-        src_con.commit()
-        # for tag in tags:
-        #     src_con.execute("INSERT OR REPLACE INTO target.labels SELECT * FROM labels WHERE label=? LIMIT 1",
-        #                     tag)
-        src_con.execute("INSERT OR REPLACE INTO target.labels SELECT * FROM labels WHERE label IN (%s)"
-                        % ", ".join(['?' for _ in tags]),
-                        tags)
-        src_con.commit()
-        src_con.execute("DETACH target")
-        src_con.commit()
+    logger.warning("copying tags from %s\n"
+                   "               to %s\n"
+                   "        matching %s tag%s" % (src_dir, tgt_dir, len(tags), "s" if len(tags) else ""))
+    logger.info("tags: %s" % tags)
+
+    sorted(tags, key=attrgetter("domain"))
+
+    domains = []
+    for k, g in groupby(tags, attrgetter("domain")):
+       domains.append((list(g), k))    # Store group iterator as a list
+
+    for tags, domain in domains:
+        src_dir = os.path.join(src_dir, domain_subpath(domain))
+        tgt_dir = os.path.join(tgt_dir, domain_subpath(domain))
+
+        # Ensures that tables are defined in the target db
+        with _connect_db(tgt_dir) as conn:
+            pass
+
+        with _connect_db(src_dir) as src_con:
+            src_con.execute("ATTACH ? AS target", (db_path(tgt_dir),))
+            src_con.commit()
+            for tag_label in tags:
+                if tag_label.is_wildcard():
+                    src_con.execute("INSERT OR REPLACE INTO target.labels SELECT * FROM labels WHERE label LIKE ?",
+                                    (_label_wild_convert(tag_label),))
+                else:
+                    src_con.execute("INSERT OR REPLACE INTO target.labels SELECT * FROM labels WHERE label=?",
+                                    (tag_label,))
+            src_con.commit()
+            src_con.execute("DETACH target")
+            src_con.commit()
+    logger.info("tag copying done")
 
 class Database(object):
     """
@@ -1511,28 +1560,34 @@ class Database(object):
             # The cursor now contains rules where the non-transient dependencies in the root domain are satisfied,
             # which clearly doesn't help for rules in subdomains which have no dependencies in the root domain.
             # This is why the later call to _rule_deps_satisfied is used.
+            results = cursor.fetchall()
+        while True:
+            try:
+                result = results.pop(0)
+                if self.is_domain_db():
+                    raise MuddleBug("Expected to be in main db!")
+                rule = self.get_rule_for_label(result['target'])
+                if not rule:
+                    raise MuddleBug("missing rule for target %s" % result['target'])
+                self.logger.debug("  pot. results %s" % rule)
+            except IndexError:
+                self.logger.debug("  no pot. results remain")
+                return None
 
-            while True:
-                result = cursor.fetchone()
-                if result:
-                    # rule = cPickle.load(StringIO.StringIO(result['pickle']))
-                    rule = self.get_rule_for_label(result['target'])
-                    self.logger.debug("  pot. results %s" % rule)
-                else:
-                    self.logger.debug("  no pot. results remain")
-                    return None
+            if not self.is_rule_clear(rule):
+                # rule has transient target so done state is stored locally
+                self.logger.debug("    pot. results %s already done/processing" % rule)
+                continue
+            if self.is_tag_done(rule.target):
+                self.logger.debug("    pot. results %s already done/processing" % rule)
+                continue
+            if not self._rule_deps_satisfied(rule, conn):
+                # rule has unsatisfied transient or subdomain dependencies
+                self.logger.debug("    pot. results %s not satisfied" % rule)
+                continue
 
-                if not self.is_rule_clear(rule):
-                    # rule has transient target so done state is stored locally
-                    self.logger.debug("    pot. results %s already done/processing" % rule)
-                    continue
-                if not self._rule_deps_satisfied(rule, conn):
-                    # rule has unsatisfied transient or subdomain dependencies
-                    self.logger.debug("    pot. results %s not satisfied" % rule)
-                    continue
-
-                self.logger.debug("  returning %s, satisfied and not done" % rule)
-                return rule
+            self.logger.debug("  returning %s, satisfied and not done" % rule)
+            return rule
 
     def _rule_deps_satisfied(self, rule, conn):
         """
@@ -1583,6 +1638,7 @@ class Database(object):
             conn.execute("DELETE FROM labels_to_rules")
             conn.execute("DELETE FROM rules_to_labels")
             conn.execute("DELETE FROM rules")
+            conn.execute("DELETE FROM rules_to_build")
             #conn.execute("DELETE FROM labels WHERE transient=?", (True,))
             #conn.execute("DELETE FROM labels WHERE done=?", (False,))
             conn.commit()
@@ -1622,7 +1678,6 @@ class Database(object):
     def get_rule_for_label(self, label):
         if self.is_domain_db():
             return None
-            # TODO: search for rule in parent/grandparent domain
             # This code path is only expected when unstamping
         with self._connect_root_db() as conn:
             cursor = conn.cursor()
@@ -1669,7 +1724,12 @@ class Database(object):
                     "WHERE target=? AND owner_uuid=? AND owner_pid=? AND status=?",
                 (rule.target, UUID, pid, Database.PROCESSING))
             result = cursor.fetchone()
-            return result is not None
+            if result is not None:
+                self.logger.debug("Set %s as processing" % rule)
+                return True
+            else:
+                self.logger.debug("Failed to set %s as processing" % rule)
+                return False
 
     def set_rule_done(self, rule):
         """
@@ -1753,6 +1813,31 @@ class Database(object):
 
             conn.execute("DELETE FROM labels WHERE label LIKE ?",
                                   (type+'%',))
+            conn.commit()
+
+    def get_parameter(self, key):
+        with self._connect_root_db() as conn:
+            cursor = conn.execute("SELECT value FROM parameters WHERE key=? LIMIT 1", (key,))
+            result = cursor.fetchone()
+            if result:
+                return cPickle.load(StringIO.StringIO(result['value']))
+            else:
+                return None
+
+    def set_parameter(self, key, value):
+        with self._connect_root_db() as conn:
+            conn.execute("INSERT OR REPLACE INTO parameters (key, value) VALUES (?, ?)",
+                         (key, sqlite3.Binary(cPickle.dumps(value, pickle_ver))))
+            conn.commit()
+
+    def del_parameter(self, key):
+        with self._connect_root_db() as conn:
+            conn.execute("DELETE FROM parameters WHERE key=?", (key,))
+            conn.commit()
+
+    def clear_parameters(self):
+        with self._connect_root_db() as conn:
+            conn.execute("DELETE FROM parameters")
             conn.commit()
 
     def is_master(self):

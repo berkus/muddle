@@ -848,16 +848,6 @@ def kill_labels(builder, to_kill):
     except GiveUp, e:
         raise GiveUp("Can't kill %s - %s"%(str(lbl), e))
 
-# def build_labels(to_build, master=True):
-#     if len(to_build) == 1:
-#         print "Building %s"%to_build[0]
-#     else:
-#         print "Building %d labels"%len(to_build)
-#
-#     try:
-#         builder.build_labels(to_build, master=True)
-#     except GiveUp,e:
-#         raise GiveUp("Can't build %s - %s"%(str(to_build), e))
 
 # =============================================================================
 # Actual commands
@@ -5302,7 +5292,10 @@ class Release(Command):
         # Are we a proper release build?
         if not testing:
             # Check the current directory is empty
-            if len(os.listdir(current_dir)):
+            files = os.listdir(current_dir)
+            if ".muddle.log" in files:
+                files.remove(".muddle.log")
+            if len(files):
                 raise GiveUp('Cannot release into %s, it is not empty'%current_dir)
 
             # Let the unstamp command do the unstamping for us...
@@ -5939,7 +5932,8 @@ class Pull(CheckoutCommand):
 
         just_pulled = builder.db.just_pulled.get_from_disk()
         if just_pulled:
-            log('\nThe following checkouts were pulled:\n ', end=' ')
+            log('')
+            log('The following checkouts were pulled:', end='\n  ')
             log(label_list_to_string(sorted(just_pulled), join_with='\n  '))
 
         if self.not_needed:

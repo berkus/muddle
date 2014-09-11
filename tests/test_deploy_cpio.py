@@ -256,7 +256,7 @@ def check_cpio_archive(archive):
     lines = text.splitlines()
     if len(lines) != len(expected):
         print '---------------------------- EXPECTED'
-        print '\n'.join(expected)
+        print '\n'.join(map(lambda x: '\t'.join(x), expected))
         print '---------------------------- GOT'
         print '\n'.join(lines)
         print '----------------------------'

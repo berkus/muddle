@@ -663,7 +663,7 @@ def get_implicit_gpl_checkouts(builder):
 
     result = set()              # Checkouts implicitly affected
     because = {}                # checkout -> what it depended on that did so
-    logger.debug()
+    logger.debug("")
     logger.debug('Finding implicit GPL checkouts')
     for co_label in all_gpl_checkouts:
         logger.debug('.. %s'%co_label)
