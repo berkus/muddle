@@ -17,7 +17,7 @@ import logging.config
 # socket server that any other muddle running in the same directory connects to.
 from muddled.utils import MuddleBug
 
-file_level = 'DEBUG'
+file_level = 'INFO'
 
 # most test scripts depend on term_level being WARNING
 term_level = 'WARNING'
@@ -69,8 +69,8 @@ server_dict['handlers']['file'] = {
     'filename': '.muddle.log',
     'delay': True,
     'mode': 'a',
-    'backupCount': 50,
-    # keeps logs for the last 50 non-internal commands
+    'backupCount': 12,
+    # keeps logs for the last 12 commands
 }
 server_dict['root']['handlers'].append('file')
 client_dict = copy.deepcopy(base_dict)
@@ -91,13 +91,8 @@ class LocalFilter(logging.Filter):
 
 
     def filter(self, record):
-        if record.level >= logging.WARNING:
-            return True
-        # if record.process != self.pid:
-        # print record.__dict__
-        #     record.msg += "NOT LOCAL"
-        #     record.message += "NOT LOCAL"
-        # return True
+        # if record.level >= logging.WARNING:
+        #     return True
         return record.process == self.pid
 
 class DebugFilter(logging.Filter):

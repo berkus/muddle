@@ -197,8 +197,8 @@ def _connect_db(root_path):
                 logger.log(level, "    proc: %s" % elapsed_proc)
                 logger.log(level, "    real: %s" % elapsed_real)
                 if level >= logging.WARNING:
-                    logger.log(level, "startup trace: " + "".join(start_trace))
-                    logger.log(level, "ending trace: "+"".join(traceback.format_stack()))
+                    logger.info("startup trace: " + "".join(start_trace))
+                    logger.info("ending trace: "+"".join(traceback.format_stack()))
         def close(self):
             self.time()
             self.conn.close()
@@ -1746,6 +1746,8 @@ class Database(object):
             self.local_rules.add(rule)
         else:
             status = Database.DONE
+
+        wildcard_labels = []
         with self._connect_root_db() as conn:
             conn.execute("UPDATE rules SET "
                                         "owner_pid=NULL, "
@@ -1762,10 +1764,11 @@ class Database(object):
             # Assume wildcards aren't transient so they have no transient matching rules
             if rule.target.is_wildcard():
                 cursor = conn.execute("SELECT target AS label FROM labels_to_rules WHERE rule_target=?", (rule.target,))
-                for row in cursor:
-                    label = row['label']
-                    if self._label_wild_rules_done(label) and self._label_exact_rule_done(label):
-                        self.set_tag(label)
+                wildcard_labels = [row['label'] for row in cursor]
+        if wildcard_labels:
+            for label in wildcard_labels:
+                if self._label_wild_rules_done(label) and self._label_exact_rule_done(label):
+                    self.set_tag(label)
 
         if not rule.target.is_wildcard() and self._label_wild_rules_done(rule.target):
             self.set_tag(rule.target)
@@ -1840,6 +1843,15 @@ class Database(object):
             conn.execute("DELETE FROM parameters")
             conn.commit()
 
+    def buildable_targets_remain(self, allow_master=False, req_master=False):
+        with self._connect_root_db() as conn:
+            if allow_master:
+                cursor = conn.execute("SELECT target FROM rules_to_build LIMIT 1")
+            else:
+                cursor = conn.execute("SELECT target FROM rules_to_build WHERE req_master=? LIMIT 1", (False,))
+            return cursor.fetchone() is not None
+
+
     def is_master(self):
         with self._connect_root_db() as conn:
             cursor = conn.execute("select * from processes where pid=? and uuid=? and master=1",
@@ -1871,6 +1883,14 @@ class Database(object):
             conn.execute("delete from processes where pid=? and uuid=?",
                          (os.getpid(), UUID))
             conn.commit()
+            cursor = conn.execute("SELECT target FROM rules WHERE owner_pid=? AND owner_uuid=?", (os.getpid(), UUID))
+            result = cursor.fetchone()
+        if result:
+            label = result['target']
+            self.logger.warning("Deregistering process whilst rule %s was still being built" % label)
+            self.set_rule_clear(self.get_rule_for_label(label))
+
+
 
     def _connect_domain_db(self, domain):
         return _connect_db(self.domain_root_dir(domain))

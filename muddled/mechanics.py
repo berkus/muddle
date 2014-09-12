@@ -824,9 +824,19 @@ class Builder(object):
             while self.db.other_processes_exist():
                 time.sleep(.3)
         finally:
-            self.db.deregister_process()
-            self.building = False
-            # self.db.clear_rules()
+            registered = True
+            while registered:
+                try:
+                    # attempt to deregister the process until it succeeds
+                    self.db.deregister_process()
+                    self.building = False
+                    registered = False
+                except:
+                    logger.error("Exception occured whilst deregistering process:", exc_info=True)
+                    # Forces the database to ignore potential locking, it shouldn't cause problems
+                    # under normal circumstances.
+                    db.open_connections = {}
+                    time.sleep(1)
 
     def build_labels_from_db(self, silent, targets=None, allow_master=False, req_master=False):
         """
@@ -847,6 +857,7 @@ class Builder(object):
         else:
             use_targets = False
 
+        announced_wait = False
         while True:
             rule = self.db.get_satisfied_rule(allow_master, req_master)
             if use_targets:
@@ -855,13 +866,27 @@ class Builder(object):
                     break
 
             if not rule and not use_targets:
-                logger.info("Ran out of qualifying targets")
-                break
+                if req_master:
+                    logger.info("Ran out of buildable master rules")
+                    break
+                if self.db.buildable_targets_remain(allow_master=allow_master):
+                    if not announced_wait:
+                        logger.warning("Lacking buildable target, waiting for dependencies to be met.")
+                        announced_wait = True
+                    else:
+                        logger.info("Waiting for buildable target")
+                    time.sleep(1)
+                    continue
+                else:
+                    logger.warning("Ran out of qualifying targets")
+                    break
+            else:
+                announced_wait = False
 
             if not rule and use_targets and targets:
                 # targets unbuilt, there may be many rules that depend on the rules currently being processed
                 # so wait for a while to reduce the frequency of db access then try again
-                time.sleep(0.3)
+                time.sleep(1)
                 logger.info("  Waiting with targets %s" % targets)
                 continue
 

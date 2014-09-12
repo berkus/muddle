@@ -7747,7 +7747,18 @@ class SubprocessBuilderDb(Command):
         try:
             builder.build_labels_from_db(False)
         finally:
-            builder.db.deregister_process()
+            registered = True
+            while registered:
+                try:
+                    # attempt to deregister the process until it succeeds
+                    builder.db.deregister_process()
+                    registered = False
+                except:
+                    logger.error("Exception occured whilst deregistering process:", exc_info=True)
+                    # Forces the database to ignore potential locking, it shouldn't cause problems
+                    # under normal circumstances.
+                    db.open_connections = {}
+                    time.sleep(1)
         logger.info("sub finished")
 
     def requires_build_tree(self):
