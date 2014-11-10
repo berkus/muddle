@@ -323,7 +323,7 @@ def check_revision(checkout, revision_wanted):
 
 def get_branch(dir):
     with Directory(dir):
-        retcode, out = get_stdout2('git symbolic-ref -q HEAD')
+        retcode, out = run2('git symbolic-ref -q HEAD')
         print out
         if retcode == 0:
             out = out.strip()
@@ -344,7 +344,7 @@ def check_branch(dir, branch_wanted):
             branch, branch_wanted))
 
 def is_detached_head():
-    retcode, out = get_stdout2('git symbolic-ref -q HEAD')
+    retcode, out = run2('git symbolic-ref -q HEAD')
     if retcode == 0:
         # HEAD is a symbolic reference - so not detached
         return False
@@ -500,7 +500,7 @@ fatal: Remote branch branch.follow not found in upstream origin
 fatal: The remote end hung up unexpectedly
 
 Failure checking out checkout:co6/checked_out in {where}/src:
-Command 'git clone -b branch.follow file://{repo}/co6 co6' execution failed - 128
+Command 'git clone -b branch.follow file://{repo}/co6 co6' failed with retcode 128
 """.format(where=d.where, repo=repo))
 
 
@@ -1067,7 +1067,7 @@ def test_lifecycle(root_d):
     # And let's be really awkward...
     with Directory(d4.join('src', 'co1')):
         git('checkout master')
-        rv, text = get_stdout2('git branch')
+        rv, text = run2('git branch')
         check_text_v_lines(text,
                            ['  Widget-v0.1-maintenance',
                             '* master'])
@@ -1077,7 +1077,7 @@ def test_lifecycle(root_d):
         # "following" branch
         muddle(['pull'])
 
-        rv, text = get_stdout2('git branch')
+        rv, text = run2('git branch')
         check_text_v_lines(text,
                            ['* Widget-v0.1-maintenance',
                             '  master'])

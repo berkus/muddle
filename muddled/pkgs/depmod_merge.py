@@ -159,7 +159,7 @@ class MergeDepModBuilder(PackageBuilder):
             for n in names:
                 if (our_re.match(n) is not None):
                     print "Found kernel version %s in %s .. "%(n, our_dir)
-                    utils.run_cmd("%s -b %s %s"%(depmod, our_dir, n))
+                    utils.run0("%s -b %s %s"%(depmod, our_dir, n))
 
         elif (tag == utils.LabelTag.Installed):
             # Now we find all the modules.* files in our_dir and copy them over
@@ -218,8 +218,7 @@ def create(builder, name, role,
     action = MergeDepModBuilder(name, role, custom_depmod)
 
     pkg.add_package_rules(builder.ruleset, name, role, action)
-    pkg.do_depend(builder, name, [ role ],
-                  pkgs_and_roles)
+    pkg.do_depend(builder, name, [role], pkgs_and_roles)
 
     for (pname, role) in pkgs_and_roles:
         lbl = depend.Label(utils.LabelType.Package,

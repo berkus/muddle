@@ -33,7 +33,7 @@ sys.path.insert(0,parent_dir)
 
 try:
     import muddled.cmdline
-    from muddled.utils import MuddleBug, GiveUp, normalise_dir
+    from muddled.utils import MuddleBug, GiveUp, ShellError, normalise_dir
 except ImportError:
     # Hah - maybe we're being run throught the 'muddle' soft link
     # from the same directory that contains the muddled/ package,
@@ -41,20 +41,35 @@ except ImportError:
     # to nothing - ho hum). So try:
     sys.path = [this_dir] + sys.path[1:]
     import muddled.cmdline
-    from muddled.utils import MuddleBug, GiveUp, normalise_dir
+    from muddled.utils import MuddleBug, GiveUp, ShellError, normalise_dir
 
 if __name__ == "__main__":
     try:
         muddle_binary = normalise_dir(__file__)
         muddled.cmdline.cmdline(sys.argv[1:], muddle_binary)
         sys.exit(0)
-    except MuddleBug as e:
-        print("")
-        print("%s"%e)
+    except MuddleBug, e:
+        # We assume this represents a bug in muddle itself, so give a full
+        # traceback to help locate it.
+        print
+        print "%s"%e
+        traceback.print_exc()
+        sys.exit(e.retcode)
+    except ShellError, e:
+        # A ShellError is a subclass of GiveUp. If it reaches this level,
+        # though, it indicates that some shell command (probably run with
+        # utils.run0()) failed and was not caught elsewhere. This is normally
+        # a problem in the muddle infrastructure, so we treat it as a
+        # MuddleBug, with a full traceback
+        print
+        print "%s"%e
         traceback.print_exc()
         sys.exit(e.retcode)
     except GiveUp as e:
-        print("")
+        # We have some error or infelicity to tell the user about, which
+        # is being communicated to us via a GiveUp exception. This is not
+        # (should not be) a bug in muddle itself.
+        print
         text = str(e)
         if text:
             print(text)

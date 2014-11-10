@@ -120,7 +120,7 @@ class MakeBuilder(PackageBuilder):
                                                  self.per_role_makefiles,
                                                  label.role)
 
-            make_args = ' -f %s'%(makefile_name)
+            make_cmd = ['make', '-f', makefile_name]
 
             if (tag == utils.LabelTag.PreConfig):
                 # Preconfigure - nothing need be done
@@ -128,11 +128,11 @@ class MakeBuilder(PackageBuilder):
             elif (tag == utils.LabelTag.Configured):
                 # We should probably do the configure thing ..
                 if (self.has_make_config):
-                    utils.run_cmd("make %s config"%make_args)
+                    utils.run0(make_cmd + ["config"])
             elif (tag == utils.LabelTag.Built):
-                utils.run_cmd("make %s"%make_args)
+                utils.run0(make_cmd)
             elif (tag == utils.LabelTag.Installed):
-                utils.run_cmd("make %s install"%make_args)
+                utils.run0(make_cmd + ["install"])
             elif (tag == utils.LabelTag.PostInstalled):
                 if (self.rewriteAutoconf):
                     #print "> Rewrite autoconf for label %s"%(label)
@@ -145,9 +145,9 @@ class MakeBuilder(PackageBuilder):
 
                     rewrite.fix_up_pkgconfig_and_la(builder, obj_path, execPrefix = sendExecPrefix)
             elif (tag == utils.LabelTag.Clean):
-                utils.run_cmd("make %s clean"%make_args)
+                utils.run0(make_cmd + ["clean"])
             elif (tag == utils.LabelTag.DistClean):
-                utils.run_cmd("make %s distclean"%make_args)
+                utils.run0(make_cmd + ["distclean"])
             else:
                 raise utils.MuddleBug("Invalid tag specified for "
                                   "MakePackage building %s"%(label))
@@ -187,11 +187,9 @@ def simple(builder, name, role, checkout, rev=None, branch=None,
                           rewriteAutoconf = rewriteAutoconf,
                           execRelPath = execRelPath)
     # Add the standard dependencies ..
-    pkg.add_package_rules(builder.ruleset,
-                          name, role, the_pkg)
+    pkg.add_package_rules(builder.ruleset, name, role, the_pkg)
     # .. and make us depend on the checkout.
-    pkg.package_depends_on_checkout(builder.ruleset,
-                                    name, role, checkout, the_pkg)
+    pkg.package_depends_on_checkout(builder.ruleset, name, role, checkout, the_pkg)
     ###attach_env(builder, name, role, checkout)
 
 def medium(builder, name, roles, checkout, rev=None, branch=None,
@@ -392,14 +390,16 @@ class ExpandingMakeBuilder(MakeBuilder):
         # Make sure to remove any previous unpacking of the archive
         dest_dir = os.path.join(obj_dir, self.archive_dir)
         if os.path.exists(dest_dir):
-            utils.run_cmd('rm -rf %s'%dest_dir)
+            utils.run0(['rm', '-rf', dest_dir])
 
-        utils.run_cmd('tar -C %s -xf %s'%(obj_dir, archive_path))
+        utils.run0(['tar', '-C', obj_dir, '-xf', archive_path])
 
         # Ideally, we'd have unpacked the directory as obj/, so that we can
         # refer to it as $(MUDDLE_OBJ_OBJ). However, with a little cunning...
 
-        utils.run_cmd('cd %s; ln -sf %s obj'%(obj_dir, self.archive_dir))
+        with Directory(obj_dir):
+            utils.run0(['ln', '-sf', self.archive_dir, 'obj'],
+                       show_command=True, show_output=True)
 
     def build_label(self, builder, label):
         """Build our label.
@@ -467,8 +467,7 @@ def expanding_package(builder, name, archive_dir,
     pkg.add_package_rules(builder.ruleset, name, role, dep)
 
     # It depends on the checkout
-    pkg.package_depends_on_checkout(builder.ruleset, name, role,
-                                    co_name)
+    pkg.package_depends_on_checkout(builder.ruleset, name, role, co_name)
 
     # And maybe on other packages
     if deps:

@@ -120,7 +120,7 @@ def git_supports_ff_only():
     global g_supports_ff_only
 
     if (g_supports_ff_only is None):
-        retcode, stdout, stderr = utils.run_cmd_for_output("git --version", useShell = True)
+        retcode, stdout = utils.run2("git --version", show_command=False)
         version = stdout
         m = re.search(r' ([0-9]+)\.([a0-9]+)', version)
         if (int(m.group(1)) <= 1 and int(m.group(2)) <= 6):
@@ -136,7 +136,7 @@ def expand_revision(revision):
 
     Raises GiveUp if the revision appears non-existent or ambiguous
     """
-    rv, out, err = utils.get_cmd_data('git rev-parse %s'%revision, fail_nonzero=False)
+    rv, out = utils.run2('git rev-parse %s'%revision, show_command=False)
     if rv:
         raise GiveUp('Revision "%s" is either non-existant or ambiguous'%revision)
     return out.strip()
@@ -160,7 +160,7 @@ class Git(VersionControlSystem):
         """
         # This is *really* hacky...
         if not os.path.exists('.git'):
-            utils.run_cmd("git init", verbose=verbose)
+            utils.shell(["git", "init"])
 
     def add_files(self, files=None, verbose=True):
         """
@@ -169,7 +169,7 @@ class Git(VersionControlSystem):
         Will be called in the actual checkout's directory.
         """
         if files:
-            utils.run_cmd("git add %s"%' '.join(files), verbose=verbose)
+            utils.shell(["git", "add"] + list(files), show_command=verbose)
 
     def checkout(self, repo, co_leaf, options, verbose=True):
         """
@@ -180,15 +180,16 @@ class Git(VersionControlSystem):
         Expected to create a directory called <co_leaf> therein.
         """
         if repo.branch:
-            args = "-b %s"%repo.branch
+            args = ["-b", repo.branch]
         else:
             # Explicitly use master if no branch specified - don't default
-            args = "-b master"
+            args = ["-b", "master"]
 
         if options.get('shallow_checkout'):
-            args="%s --depth 1"%args
+            args += ["--depth", "1"]
 
-        utils.run_cmd("git clone %s %s %s"%(args, repo.url, co_leaf), verbose=verbose)
+        utils.shell(["git", "clone"] + args + [repo.url, str(co_leaf)],
+                   show_command=verbose)
 
         if repo.revision:
             with Directory(co_leaf):
@@ -200,7 +201,7 @@ class Git(VersionControlSystem):
                     # XXX that is rather what we asked for...
                     # XXX Or maybe we want to leave the message, as the warning
                     # XXX it is meant to be
-                    utils.run_cmd("git checkout %s"%repo.revision)
+                    utils.shell(["git", "checkout", repo.revision])
 
     def _is_it_safe(self):
         """
@@ -209,11 +210,10 @@ class Git(VersionControlSystem):
         Raise an exception if there are (uncommitted) local changes or
         untracked files...
         """
-        retcode, text, ignore = utils.get_cmd_data("git status --porcelain",
-                                                   fail_nonzero=False)
+        retcode, text= utils.run2("git status --porcelain", show_command=False)
         if retcode == 129:
             print "Warning: Your git does not support --porcelain; you should upgrade it."
-            retcode, text, ignore = utils.get_cmd_data("git status", fail_nonzero=False)
+            retcode, text = utils.run2("git status", show_command=False)
             if text.find("working directory clean") >= 0:
                 text = ''
 
@@ -295,7 +295,7 @@ class Git(VersionControlSystem):
         # This *does* mean there's a slight delay before the user sees the output,
         # though
         cmd = "git fetch %s"%upstream
-        rv, out, err = utils.get_cmd_data(cmd, verbose=verbose, fail_nonzero=False)
+        rv, out = utils.run2(cmd, show_command=verbose)
         if rv:
             raise GiveUp('Error %d running "%s"\n%s'%(rv, cmd, out))
         else:
@@ -320,10 +320,10 @@ class Git(VersionControlSystem):
             # operation, which is why the message doesn't say it's the build
             # description we're obeying
             print '++ Just changing to the revision explicitly requested for this checkout'
-            utils.run_cmd("git checkout %s"%repo.revision)
+            utils.shell(["git", "checkout", repo.revision])
         elif merge:
             # Just merge what we fetched into the current working tree
-            utils.run_cmd("git merge %s"%remote, verbose=verbose)
+            utils.shell(["git", "merge", remote], show_command=verbose)
         else:
             # Merge what we fetched into the working tree, but only if this is
             # a fast-forward merge, and thus doesn't require the user to do any
@@ -333,9 +333,9 @@ class Git(VersionControlSystem):
             # (See git-pull(1) and git-fetch(1): "without storing the remote
             # branch anywhere locally".)
             if (git_supports_ff_only()):
-                utils.run_cmd("git merge --ff-only %s"%remote, verbose=verbose)
+                utils.shell(["git", "merge", "--ff-only", remote], show_command=verbose)
             else:
-                utils.run_cmd("git merge --ff %s"%remote, verbose=verbose)
+                utils.shell(["git", "merge", "--ff", remote], show_command=verbose)
 
         ending_revision = self._git_rev_parse_HEAD()
 
@@ -388,7 +388,7 @@ class Git(VersionControlSystem):
         Does 'git commit -a' - i.e., this implicitly does 'git add' for you.
         This is a contentious choice, and needs review.
         """
-        utils.run_cmd("git commit -a", verbose=verbose)
+        utils.shell(["git", "commit", "-a"], show_command=verbose)
 
     def push(self, repo, options, upstream=None, verbose=True):
         """
@@ -419,19 +419,18 @@ class Git(VersionControlSystem):
         # repository...)
         self._setup_remote(upstream, repo, verbose=verbose)
 
-        utils.run_cmd("git push %s %s"%(upstream, effective_branch), verbose=verbose)
+        utils.shell(["git", "push", upstream, effective_branch], show_command=verbose)
 
-    def status(self, repo, options):
+    def status(self, repo, options, quick=False):
         """
         Will be called in the actual checkout's directory.
 
         Return status text or None if there is no interesting status.
         """
-        retcode, text, ignore = utils.get_cmd_data("git status --porcelain",
-                                                   fail_nonzero=False)
+        retcode, text = utils.run2("git status --porcelain", show_command=False)
         if retcode == 129:
             print "Warning: Your git does not support --porcelain; you should upgrade it."
-            retcode, text, ignore = utils.get_cmd_data("git status", fail_nonzero=False)
+            retcode, text = utils.run2("git status", show_command=False)
 
         detached_head = self._is_detached_HEAD()
 
@@ -446,25 +445,44 @@ class Git(VersionControlSystem):
         if text:
             return text
 
-        # git status will tell us if there uncommitted changes, etc., or if
+        # git status will tell us if there uncommitted changes, etc., but not if
         # we are ahead of or behind (the local idea of) the remote repository,
-        # but it cannot tell us if the remote repository is behind us (and our
-        # local idea of it).
+        # or it will, but not with --porcelain
+
 
         if detached_head:
             head_name = 'HEAD'
         else:
             # First, find out what our HEAD actually is
-            retcode, text, ignore = utils.get_cmd_data("git rev-parse --symbolic-full-name HEAD")
+            retcode, text = utils.run2("git rev-parse --symbolic-full-name HEAD",
+                                       show_command=False)
             head_name = text.strip()
 
         # Now we can look up its SHA1, locally
-        retcode, head_revision, ignore = utils.get_cmd_data("git rev-parse %s"%head_name)
+        retcode, head_revision = utils.run2("git rev-parse %s"%head_name,
+                                            show_command=False)
         local_head_ref = head_revision.strip()
 
+        if quick:
+            branch_name = utils.get_cmd_data("git rev-parse --abbrev-ref HEAD")
+            text = utils.get_cmd_data("git show-ref origin/%s"%branch_name)
+            ref, what = text.split()
+            if ref != local_head_ref:
+                return '\n'.join(
+                    ('After checking local HEAD against our local record of the remote HEAD',
+                     '# The local repository does not match the remote:',
+                     '#',
+                     '#  HEAD   is %s'%head_name,
+                     '#  Local  is %s'%local_head_ref,
+                     '#  last known origin/%s is %s'%(branch_name, ref),
+                     '#',
+                     '# You probably need to push or pull.',
+                     '# Use "muddle status" without "-quick" to get a better idea'))
+            else:
+                return None
+
         # So look up the remote equivalents...
-        retcode, text, ignore = utils.get_cmd_data("git ls-remote",
-                                                   fail_nonzero=False)
+        retcode, text = utils.run2("git ls-remote", show_command=False)
         lines = text.split('\n')
         if retcode:
             # Oh dear - something nasty happened
@@ -504,8 +522,8 @@ class Git(VersionControlSystem):
         """
         need_to_set_url = False
         # Are there actually any values already stored for this remote?
-        retcode, out, ignore = utils.get_cmd_data("git config --get-regexp remote.%s.*"%remote_name,
-                                                  fail_nonzero=False)
+        retcode, out = utils.run2("git config --get-regexp remote.%s.*"%remote_name,
+                                  show_command=False)
         if retcode == 0:    # there were
             # Were the URLs OK?
             for line in out.split('\n'):
@@ -520,14 +538,15 @@ class Git(VersionControlSystem):
             if need_to_set_url:
                 # We don't want to do this unless it is necessary, because it
                 # will give an error if there is nothing for it to remove
-                utils.run_cmd("git remote rm %s"%remote_name, verbose=verbose, allowFailure=True)
+                utils.shell(["git", "remote", "rm", remote_name], show_command=verbose)
         else:               # there were not
             need_to_set_url = True
 
         if need_to_set_url:
             # 'git remote add' sets up remote.origin.fetch and remote.origin.url
             # which are the minimum we should need
-            utils.run_cmd("git remote add %s %s"%(remote_name, remote_repo), verbose=verbose)
+            utils.shell(["git", "remote", "add", remote_name, remote_repo],
+                       show_command=verbose)
 
     def reparent(self, co_dir, remote_repo, options, force=False, verbose=True):
         """
@@ -553,8 +572,7 @@ class Git(VersionControlSystem):
         This returns a "pretty" name for the revision, but only if there
         are annotated tags in its history.
         """
-        retcode, revision, ignore = utils.get_cmd_data('git describe --long',
-                                                       fail_nonzero=False)
+        retcode, revision = utils.run2('git describe --long', show_command=False)
         if retcode:
             if revision:
                 text = utils.indent(revision.strip(),'    ')
@@ -577,7 +595,7 @@ class Git(VersionControlSystem):
         Detect if the current checkout is 'detached HEAD'
         """
         # This is a documented usage of 'git symbolic-ref -q HEAD'
-        retcode, out, err = utils.get_cmd_data('git symbolic-ref -q HEAD', fail_nonzero=False)
+        retcode, out = utils.run2('git symbolic-ref -q HEAD', show_command=False)
         if retcode == 0:
             # HEAD is a symbolic reference - so not detached
             return False
@@ -598,7 +616,7 @@ class Git(VersionControlSystem):
 
         Returns None if we are not on a branch (e.g., a detached HEAD)
         """
-        retcode, out, err = utils.get_cmd_data('git symbolic-ref -q HEAD', fail_nonzero=False)
+        retcode, out = utils.run2('git symbolic-ref -q HEAD', show_command=False)
         if retcode == 0:
             out = out.strip()
             if out.startswith('refs/heads'):
@@ -626,13 +644,13 @@ class Git(VersionControlSystem):
         # name, we want the command to propagate 'sp ace' down as a single
         # word, so it gets reported with the appropriate error. Thus we need
         # to pass the command as a list.
-        retcode, out, err = utils.run_cmd_for_output(['git', 'branch', branch],
-                                                     fold_stderr=True, verbose=verbose)
+        retcode, out = utils.run2(['git', 'branch', branch], show_command=verbose)
         if retcode:
             raise GiveUp('Error creating branch "%s": %s'%(branch, out))
 
         # Add this branch to the 'origin' remote for this checkout
-        utils.run_cmd("git remote set-branches --add origin %s"%branch, verbose=verbose)
+        utils.shell(["git", "remote", "set-branches", "--add", "origin", branch],
+                   show_command=verbose)
 
     def goto_branch(self, branch, verbose=False):
         """
@@ -643,8 +661,7 @@ class Git(VersionControlSystem):
         It is an error if the branch does not exist, in which case a GiveUp
         exception will be raised.
         """
-        retcode, out, err = utils.run_cmd_for_output(['git', 'checkout', branch],
-                                                     fold_stderr=True, verbose=verbose)
+        retcode, out = utils.run2(['git', 'checkout', branch], show_command=verbose)
         if retcode:
             raise GiveUp('Error going to branch "%s": %s'%(branch, out))
 
@@ -677,8 +694,8 @@ class Git(VersionControlSystem):
             if new_revision == expand_revision(revision): # Heh, we're already there
                 return
 
-        retcode, out, err = utils.run_cmd_for_output(['git', 'checkout', revision],
-                                                     fold_stderr=True, verbose=verbose)
+        retcode, out = utils.run2(['git', 'checkout', revision],
+                                  show_command=verbose, show_output=True)
         if retcode:
             raise GiveUp('Error going to revision "%s": %s'%(revision, out))
 
@@ -688,7 +705,7 @@ class Git(VersionControlSystem):
 
         Will be called in the actual checkout's directory.
         """
-        retcode, out, err = utils.get_cmd_data('git branch -a', fail_nonzero=False)
+        retcode, out = utils.run2('git branch -a', show_command=False)
         if retcode:
             raise GiveUp('Error looking up existing branches: %s'%out)
 
@@ -708,8 +725,7 @@ class Git(VersionControlSystem):
         """
         This returns a bare SHA1 object name for the current HEAD
         """
-        retcode, revision, ignore = utils.get_cmd_data('git rev-parse HEAD',
-                                                       fail_nonzero=False)
+        retcode, revision = utils.run2('git rev-parse HEAD', show_command=False)
         if retcode:
             raise GiveUp("'git rev-parse HEAD' failed with return code %d"%retcode)
         return revision.strip()
@@ -723,8 +739,8 @@ class Git(VersionControlSystem):
         """
         if before:
             print "git rev-list -n 1 --before='%s' HEAD"%before
-            retcode, revision, ignore = utils.get_cmd_data("git rev-list -n 1 --before='%s' HEAD"%before,
-                                                           fail_nonzero=False)
+            retcode, revision = utils.run2("git rev-list -n 1 --before='%s' HEAD"%before,
+                                           show_command=False)
             print retcode, revision
             if retcode:
                 if revision:
@@ -736,8 +752,7 @@ class Git(VersionControlSystem):
                     " could not determine a revision id for checkout:"%(co_leaf, before)),
                     text))
         else:
-            retcode, revision, ignore = utils.get_cmd_data('git rev-parse HEAD',
-                                                           fail_nonzero=False)
+            retcode, revision = utils.run2('git rev-parse HEAD', show_command=False)
             if retcode:
                 if revision:
                     text = utils.indent(revision.strip(),'    ')
@@ -785,13 +800,6 @@ class Git(VersionControlSystem):
         else:
             orig_revision = 'HEAD'
 
-        ### I think that it is not useful to do the following check...
-        ##retcode, text, ignore = utils.get_cmd_data('git status', fail_nonzero=False)
-        ##text = text.strip()
-        ##if not self._git_status_text_ok(text):
-        ##    raise GiveUp("%s\n%s"%(utils.wrap("%s: 'git status' suggests"
-        ##        " checkout does not match master:"%co_leaf),
-        ##        utils.indent(text,'    ')))
         if False:
             # Should we try this first, and only "fall back" to the pure
             # SHA1 object name if it fails, or is the pure SHA1 object name
