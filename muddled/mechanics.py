@@ -6,6 +6,7 @@ import os
 import re
 import sys
 import traceback
+import cPickle
 
 import muddled.db as db
 import muddled.depend as depend
@@ -13,6 +14,7 @@ import muddled.pkg as pkg
 import muddled.utils as utils
 import muddled.env_store as env_store
 import muddled.instr as instr
+import muddled.rules_cache as rcache
 
 from muddled.depend import Label, Action, normalise_checkout_label, label_list_to_string
 from muddled.utils import domain_subpath, GiveUp, MuddleBug, LabelType, LabelTag
@@ -165,6 +167,32 @@ class Builder(object):
         # the build description? This is ignored if a checkout already
         # (explicitly) specifies its own branch or revision.
         self._follow_build_desc_branch = False
+
+    def save_to(self, file):
+        try:
+            with open(file, 'wb') as f:
+                cPickle.dump(self.__dict__, f, 2)
+            return True
+        except cPickle.PicklingError:
+            print 'Failed to pickle builder'
+            return False
+        except IOError:
+            print 'Failed to write %s' % file
+            return False
+
+    def load_from(self, file):
+        try:
+            with open(file, 'rb') as f:
+                tmp_dict = cPickle.load(f)
+
+            self.__dict__.update(tmp_dict)
+            return True
+        except cPickle.UnpicklingError:
+            print 'Failed to unpickle builder'
+            return False
+        except IOError:
+            print 'Could not open %s, may not exist' % file
+            return False
 
     @property
     def build_desc_repo(self):
@@ -2091,7 +2119,7 @@ def dynamic_load_build_desc(builder):
         sys.path = old_path
 
 
-def load_builder(root_path, muddle_binary, params=None, default_domain=None):
+def load_builder(root_path, muddle_binary, use_cached_builder, params=None, default_domain=None):
     """
     Load a builder from the given root path.
 
@@ -2107,12 +2135,40 @@ def load_builder(root_path, muddle_binary, params=None, default_domain=None):
     * If given, 'default_domain' is the default domain name for this
       (sub) build tree. This is used by the "muddle unstamp" command,
       and the muddle_patch.py script.
+    * If given, 'used_cached_build' is True if we should attempt to used a
+      cached builder
     """
 
     builder = Builder(root_path, muddle_binary, params, default_domain=default_domain)
-    can_load = builder._load_build_description()
-    if not can_load:
+
+    # Calculate the hash of the current build description
+    builder_hash = rcache.hash_file_and_imports(os.path.join(builder.db.root_path,
+                                                             'src/',
+                                                             builder.db.Description_pathfile.get_if_it_exists()))
+    loaded_from_cache, loaded_from_file = False, False
+    if use_cached_builder:
+        # Check if the build description has changed
+        if builder.db.builder_hash_file.get_if_it_exists() == builder_hash.rstrip():
+            loaded_from_cache = builder.load_from(builder.db.pickled_builder_file.file_name)
+            # Can't do this - muddle query relies on stdout.
+            #if loaded_from_cache:
+            #    print 'Loaded cached builder'
+
+    if not loaded_from_cache:
+        loaded_from_file = builder._load_build_description()
+        # Mustn't do this - it interferes with muddle query.
+        #if loaded_from_file:
+        #    print 'Loaded non-cached builder'
+
+    if not (loaded_from_cache or loaded_from_file):
         return None
+
+    if loaded_from_file:
+        # Cache the builder for next time
+        if builder.save_to(builder.db.pickled_builder_file.file_name) is True:
+            # Only write the hash if we are happy that the pickling was successful
+            # we don't ever want to have the correct hash and wrong cache
+            builder.db.builder_hash_file.write_to_file(builder_hash)
 
     # Are we a release build?
     if builder.is_release_build():

@@ -258,6 +258,14 @@ class Database(object):
                                           '.muddle',
                                           '_just_pulled'))
 
+        self.builder_hash_file = BuilderHashFile(os.path.join(self.root_path,
+                                                 '.muddle',
+                                                 'BuilderHash'))
+
+        self.pickled_builder_file = PickledBuilderFile(os.path.join(self.root_path,
+                                                                    '.muddle',
+                                                                    'BuilderCache'))
+
         self.checkout_data = {}
 
         self.checkout_licenses = {}
@@ -1787,6 +1795,41 @@ class JustPulledFile(object):
                 ##print 'XXX %s'%label
                 fd.write('%s\n'%label)
 
+class BuilderHashFile(object):
+    """ Represents the file containing the cached builder hash
+    """
+
+    def __init__(self, file_name):
+        self.file_name = file_name
+
+    def get_if_it_exists(self):
+        """ We don't make any effort to check if this is sensible or not
+            because we only care if it matches the just computed hash.
+
+        :return: the hex digest stored in the file or None
+        """
+        try:
+            with open(self.file_name, 'r') as f:
+                return f.readline()
+        except IOError as e:
+            if e.errno == errno.ENOENT:
+                # File doesn't exist
+                return None
+            else:
+                raise
+
+    def write_to_file(self, hex_digest):
+        """  Write a new hash to the file
+        """
+        with open(self.file_name, 'w') as f:
+            f.write(hex_digest)
+
+class PickledBuilderFile(object):
+    """ Represents the file containing the pickled builder object
+    """
+
+    def __init__(self, file_name):
+        self.file_name = file_name
 # End file
 
 

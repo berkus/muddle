@@ -72,15 +72,17 @@ def show_version():
         else:
             print '%s in %s'%(version, muddle_dir)
 
-def find_and_load(specified_root, muddle_binary):
+def find_and_load(specified_root, muddle_binary, use_cached_builder):
     """Find our .muddle root, and then load our builder, and return it.
     """
+
     try:
         (build_root, build_domain) = utils.find_root_and_domain(specified_root)
         if build_root:
             builder = mechanics.load_builder(build_root, muddle_binary,
                                              #default_domain = build_domain)
-                                             default_domain = None) # 'cos it's the toplevel
+                                             use_cached_builder,
+                                             default_domain = None)
         else:
             builder = None
         return builder
@@ -197,6 +199,7 @@ def _cmdline(args, current_dir, original_env, muddle_binary):
 
     guess_what_to_do = False
     command_name = ""
+    use_cached_builder = True
 
     command = None
     command_options = { }
@@ -213,6 +216,8 @@ def _cmdline(args, current_dir, original_env, muddle_binary):
         elif word == '--version':
             show_version()
             return
+        elif word == '--no-cache':
+            use_cached_builder = False
         elif word in ('-n', "--just-print"):
             command_options["no_operation"] = True
         elif word[0] == '-':
@@ -229,7 +234,7 @@ def _cmdline(args, current_dir, original_env, muddle_binary):
         guess_what_to_do = True
 
     # Are we in a muddle build?
-    builder = find_and_load(specified_root, muddle_binary)
+    builder = find_and_load(specified_root, muddle_binary, use_cached_builder)
     if builder and guess_what_to_do:
         # We are, but we have to "guess" what to do
         command_name, args = guess_cmd_in_build(builder, current_dir)

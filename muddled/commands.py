@@ -1573,7 +1573,8 @@ class Init(Command):
 
         print
         print "Loading build description .. \n"
-        builder = mechanics.load_builder(current_dir, muddle_binary)
+        # We don't want to load anything cached, because we are initialising.
+        builder = mechanics.load_builder(current_dir, muddle_binary, False)
 
         # If our top level build description wants things to follow its
         # branch, and there are subdomains, we need to adjust the subdomain
