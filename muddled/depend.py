@@ -1230,6 +1230,7 @@ class RuleSet(object):
 
     def __init__(self):
         self.map = { }
+        self.cache = { }
 
     def add(self, rule):
         """
@@ -1240,6 +1241,9 @@ class RuleSet(object):
 
         If this rule is for a new target, just remember it.
         """
+        # Invalidate our cache
+        self.cache = { }
+
         # Do we have the same target?
         inst = self.map.get(rule.target, None)
         if (inst is None):
@@ -1262,10 +1266,15 @@ class RuleSet(object):
         """
         rules = set()
         if (useMatch):
-            for (k,v) in self.map.items():
-                #if (label.match(k) is not None):
-                if label.just_match(k):
-                    rules.add(v)
+            cached = self.cache.get(label, None)
+            if cached is None:
+                for (k,v) in self.map.items():
+                    #if (label.match(k) is not None):
+                    if label.just_match(k):
+                        rules.add(v)
+                self.cache[label] = rules
+            else:
+                rules = cached
         elif (useTags):
             rule = self.map.get(label, None)
             if (rule is not None):
@@ -1319,6 +1328,7 @@ class RuleSet(object):
         if (createIfNotPresent and (rv is None)):
             rv = Rule(target, None)
             self.map[target] = rv
+            self.cache = { }
 
         return rv
 
@@ -1406,6 +1416,7 @@ class RuleSet(object):
 
         # .. and new_map is the new map.
         self.map = new_map
+        self.cache = { }
 
 
     def to_string(self, matchLabel = None,
